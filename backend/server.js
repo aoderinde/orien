@@ -15,7 +15,7 @@ const wss = new WebSocketServer({ server });
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://your-frontend.vercel.app', // Später ersetzen!
+  'https://orien-tau.vercel.app/', 
 ];
 
 app.use(cors({
