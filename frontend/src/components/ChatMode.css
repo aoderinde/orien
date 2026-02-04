@@ -186,14 +186,12 @@
         transform: translateY(0);
     }
 }
-
 .chat-message.user {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white; /* ← Sollte schon da sein, aber sicherstellen! */
+    background: linear-gradient(135deg, #7c8ff5 0%, #9066d4 100%);
+    color: white;
     margin-left: auto;
     border-bottom-right-radius: 4px;
 }
-
 .chat-message.assistant {
     background: white;
     border: 2px solid #e2e8f0;
@@ -225,7 +223,7 @@
 }
 
 .chat-message.user .message-content {
-    color: white; 
+    color: white;
     font-weight: 400;
 }
 
