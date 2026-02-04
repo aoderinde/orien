@@ -763,13 +763,25 @@ async function runConversation(initialPrompt, maxRounds = 10, model1 = 'anthropi
   const model1Name = model1.split('/')[1] || 'AI #1';
   const model2Name = model2.split('/')[1] || 'AI #2';
 
+  // NEW: Load user memory
+  const mems = collections.memories();
+  const userMemory = await mems.findOne({ userId: 'single_user' });
+
+  let memoryContext = '';
+  if (userMemory && userMemory.facts.length > 0) {
+    memoryContext = `\n\nBackground context about the user observing this conversation:\n${userMemory.facts.map(f => `- ${f}`).join('\n')}`;
+  }
+
   try {
     while (isRunning && currentRound < maxRounds) {
       currentRound++;
 
       broadcast({ type: 'status', data: { status: `${model1Name} is thinking...`, round: currentRound } });
 
-      const message1 = await callAI(model1, currentMessage);
+      // Add memory context to the message
+      const messageWithContext = currentMessage + memoryContext;
+
+      const message1 = await callAI(model1, messageWithContext);
       const entry1 = {
         id: Date.now(),
         speaker: model1Name,
@@ -787,7 +799,7 @@ async function runConversation(initialPrompt, maxRounds = 10, model1 = 'anthropi
 
       broadcast({ type: 'status', data: { status: `${model2Name} is thinking...`, round: currentRound } });
 
-      const message2 = await callAI(model2, message1);
+      const message2 = await callAI(model2, message1 + memoryContext);
       const entry2 = {
         id: Date.now() + 1,
         speaker: model2Name,

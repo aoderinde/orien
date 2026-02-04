@@ -2,18 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './ChatMode.css';
 import { MODELS } from '../models';
-import KnowledgeBase from './KnowledgeBase';
-import MemoryPanel from './MemoryPanel';
 import ConversationList from './ConversationList';
 
 import { API_URL } from '../config';
 
-function ChatMode() {
-  const [messages, setMessages] = useState([]);
+function ChatMode({ activeKnowledgeIds, onToggleKnowledge }) {
+const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeKnowledgeIds, setActiveKnowledgeIds] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState('new');
   const [conversationTitle, setConversationTitle] = useState('New Conversation');
   const [isSaving, setIsSaving] = useState(false);
@@ -245,14 +242,6 @@ function ChatMode() {
 
   const selectedModelInfo = MODELS.find(m => m.id === selectedModel);
 
-  const toggleKnowledge = (id) => {
-    setActiveKnowledgeIds(prev =>
-        prev.includes(id)
-            ? prev.filter(x => x !== id)
-            : [...prev, id]
-    );
-  };
-
   return (
       <div className="chat-mode-container">
         <button
@@ -394,15 +383,7 @@ function ChatMode() {
             </div>
           </div>
 
-          <MemoryPanel />
-
-          <KnowledgeBase
-              activeKnowledgeIds={activeKnowledgeIds}
-              onToggleKnowledge={toggleKnowledge}
-          />
-
         </div>
-
 
       </div>
   );

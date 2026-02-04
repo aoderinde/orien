@@ -5,7 +5,7 @@ import { MODELS } from '../models';
 
 import { API_URL } from '../config';
 
-function GroupChat() {
+function GroupChat({ activeKnowledgeIds }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [model1, setModel1] = useState('anthropic/claude-sonnet-4.5');
@@ -195,10 +195,43 @@ Respond ONLY with valid JSON (no markdown):
   };
 
   const callAI = async (model, history) => {
-    const apiMessages = history.map(msg => ({
-      role: msg.role === 'user' ? 'user' : 'assistant',
-      content: msg.content
-    }));
+    // Load memory
+    const memoryResponse = await axios.get(`${API_URL}/api/memories`);
+    const userMemory = memoryResponse.data;
+
+    let systemMessages = [];
+
+    // Add memory if available
+    if (userMemory && userMemory.facts.length > 0) {
+      systemMessages.push({
+        role: 'system',
+        content: `Background context about the user:\n${userMemory.facts.map(f => `- ${f}`).join('\n')}`
+      });
+    }
+
+    // NEW: Add knowledge base files if active
+    if (activeKnowledgeIds && activeKnowledgeIds.length > 0) {
+      for (const id of activeKnowledgeIds) {
+        try {
+          const kbResponse = await axios.get(`${API_URL}/api/knowledge-base/${id}`);
+          const file = kbResponse.data;
+          systemMessages.push({
+            role: 'system',
+            content: `Reference document "${file.title}":\n\n${file.content}`
+          });
+        } catch (error) {
+          console.error('Error loading knowledge file:', error);
+        }
+      }
+    }
+
+    const apiMessages = [
+      ...systemMessages,
+      ...history.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }))
+    ];
 
     const response = await axios.post(`${API_URL}/api/chat`, {
       model: model,
@@ -318,6 +351,12 @@ Respond ONLY with valid JSON (no markdown):
 
   return (
       <div className="group-chat">
+        {/* Show active knowledge indicator */}
+        {activeKnowledgeIds && activeKnowledgeIds.length > 0 && (
+            <div className="active-knowledge-bar">
+              📚 Using {activeKnowledgeIds.length} knowledge file{activeKnowledgeIds.length > 1 ? 's' : ''}
+            </div>
+        )}
         <div className="group-chat-header">
           <div className="participants">
             <div className="participant user">

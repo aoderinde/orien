@@ -5,8 +5,11 @@ import ChatMessage from './components/ChatMessage';
 import ConversationControls from './components/ConversationControls';
 import ChatMode from './components/ChatMode';
 import GroupChat from './components/GroupChat';
+import MemoryPanel from './components/MemoryPanel';
+import KnowledgeBase from './components/KnowledgeBase';
 
-import { API_URL, WS_URL } from './config';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
 function App() {
   const [mode, setMode] = useState('chat');
@@ -16,6 +19,9 @@ function App() {
   const [ws, setWs] = useState(null);
   const [currentModels, setCurrentModels] = useState(null);
   const messagesEndRef = useRef(null);
+
+  // NEW: Shared Knowledge Base state
+  const [activeKnowledgeIds, setActiveKnowledgeIds] = useState([]);
 
   useEffect(() => {
     if (mode === 'ai-vs-ai') {
@@ -117,23 +123,31 @@ function App() {
     }
   };
 
+  const toggleKnowledge = (id) => {
+    setActiveKnowledgeIds(prev =>
+        prev.includes(id)
+            ? prev.filter(x => x !== id)
+            : [...prev, id]
+    );
+  };
+
   return (
       <div className="app">
         <header>
           <h1>🤖 AI Conversation Lab 💬</h1>
           <p className="subtitle">
-            {mode === 'chat' && 'Chat Mode'}
-            {mode === 'group' && 'Group Chat'}
             {mode === 'ai-vs-ai' && 'AI vs AI'}
+            {mode === 'group' && 'Group Chat'}
+            {mode === 'chat' && 'Chat Mode'}
           </p>
         </header>
 
         <div className="mode-toggle">
           <button
-              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
-              onClick={() => setMode('chat')}
+              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+              onClick={() => setMode('ai-vs-ai')}
           >
-            💬 Chat Mode
+            🤖 AI vs AI
           </button>
           <button
               className={`mode-btn ${mode === 'group' ? 'active' : ''}`}
@@ -142,14 +156,13 @@ function App() {
             👥 Group Chat
           </button>
           <button
-              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-              onClick={() => setMode('ai-vs-ai')}
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => setMode('chat')}
           >
-            🤖 AI vs AI
+            💬 Chat Mode
           </button>
         </div>
 
-        {/* WRAPPER for content */}
         <div className="app-content">
           {mode === 'ai-vs-ai' && (
               <>
@@ -168,6 +181,12 @@ function App() {
                     </div>
                 )}
 
+                {activeKnowledgeIds.length > 0 && (
+                    <div className="active-knowledge-bar">
+                      📚 Using {activeKnowledgeIds.length} knowledge file{activeKnowledgeIds.length > 1 ? 's' : ''}
+                    </div>
+                )}
+
                 <div className="messages-container">
                   {messages.map((msg) => (
                       <ChatMessage key={msg.id} message={msg} />
@@ -177,8 +196,25 @@ function App() {
               </>
           )}
 
-          {mode === 'group' && <GroupChat />}
-          {mode === 'chat' && <ChatMode />}
+          {mode === 'group' && (
+              <GroupChat
+                  activeKnowledgeIds={activeKnowledgeIds}
+              />
+          )}
+
+          {mode === 'chat' && (
+              <ChatMode
+                  activeKnowledgeIds={activeKnowledgeIds}
+                  onToggleKnowledge={toggleKnowledge}
+              />
+          )}
+
+          {/* SHARED PANELS - Always at bottom! */}
+          <MemoryPanel />
+          <KnowledgeBase
+              activeKnowledgeIds={activeKnowledgeIds}
+              onToggleKnowledge={toggleKnowledge}
+          />
         </div>
       </div>
   );
