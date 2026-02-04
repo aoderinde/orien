@@ -60,8 +60,11 @@ function App() {
   }, [mode]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    // Only scroll if in AI vs AI mode AND messages exist
+    if (mode === 'ai-vs-ai' && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, mode]);
 
   const startConversation = async (initialPrompt, maxRounds, model1, model2) => {
     try {

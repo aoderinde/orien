@@ -169,6 +169,17 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+
+    .list-item {
+        padding: 18px; /* ← Bigger touch target */
+        margin-bottom: 12px;
+    }
+
+    .btn-delete {
+        font-size: 1.3rem; /* ← Bigger tap area */
+        padding: 8px 12px;
+    }
+    
     .conversation-list {
         max-width: 100%;
         height: 500px;

@@ -18,6 +18,7 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  position: relative; /* ← NEW */
 }
 
 header {
@@ -25,6 +26,8 @@ header {
   color: white;
   padding: 20px;
   flex-shrink: 0;
+  position: relative; /* ← NEW */
+  z-index: 20; /* ← NEW: Header on top */
 }
 
 header h1 {
@@ -45,6 +48,8 @@ header h1 {
   justify-content: center;
   padding: 0 20px 20px 20px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 10; /* ← NEW: Ensure buttons stay on top */
 }
 
 .mode-btn {
@@ -58,6 +63,8 @@ header h1 {
   cursor: pointer;
   transition: all 0.3s;
   backdrop-filter: blur(10px);
+  position: relative; /* ← NEW */
+  z-index: 10; /* ← NEW */
 }
 
 .mode-btn:hover {
@@ -65,11 +72,20 @@ header h1 {
   transform: translateY(-2px);
 }
 
+.mode-btn:active {
+  transform: translateY(0); /* ← NEW: Reset on click */
+}
+
 .mode-btn.active {
   background: white;
   color: #667eea;
   border-color: white;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  transform: none;
+}
+
+.mode-btn.active:hover {
+  transform: translateY(-2px);
 }
 
 .app-content {
@@ -82,6 +98,8 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  position: relative; /* ← NEW */
+  z-index: 1; /* ← NEW: Lower than buttons */
 }
 
 .active-knowledge-bar {

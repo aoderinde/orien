@@ -422,7 +422,7 @@ button:disabled {
 
 @media (max-width: 768px) {
     .chat-mode-container {
-        min-height: 500px;
+        min-height: calc(100vh - 180px); /* ← NEW: Almost full screen */
     }
 
     /* Memory & KB panels below chat */
@@ -431,8 +431,9 @@ button:disabled {
     }
 
     .chat-mode {
-        height: calc(100vh - 200px); /* Nearly full screen */
+        height: calc(100vh - 250px); /* ← NEW: More height! */
         min-height: 500px;
+        padding: 15px;
     }
 
     .chat-header {
@@ -455,11 +456,18 @@ button:disabled {
     }
 
     .chat-actions {
-        width: 100%;
+        display: none; /* ← NEW: Hide delete button on mobile! */
     }
 
     .chat-actions button {
-        flex: 1;
+        padding: 8px 16px; /* ← Smaller */
+        font-size: 0.9rem; /* ← Smaller text */
+        opacity: 0.7; /* ← Less prominent */
+        transition: opacity 0.2s;
+    }
+
+    .chat-actions button:hover {
+        opacity: 1;
     }
 
     .chat-message {

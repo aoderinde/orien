@@ -50,7 +50,10 @@ const [messages, setMessages] = useState([]);
   };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Only scroll when messages actually change (not on mount)
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Auto-save whenever messages change
@@ -217,22 +220,6 @@ const [messages, setMessages] = useState([]);
     }
   };
 
-  const deleteCurrentConversation = async () => {
-    if (currentConversationId === 'new') {
-      startNewChat();
-      return;
-    }
-
-    if (!window.confirm('Delete this conversation?')) return;
-
-    try {
-      await axios.delete(`${API_URL}/api/conversations/${currentConversationId}`);
-      startNewChat();
-    } catch (error) {
-      alert('Error deleting conversation: ' + error.message);
-    }
-  };
-
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -272,7 +259,6 @@ const [messages, setMessages] = useState([]);
                         onChange={(e) => setEditTitleValue(e.target.value)}
                         onKeyDown={handleTitleKeyPress}
                         onBlur={saveTitle}
-                        autoFocus
                         className="title-edit-input"
                     />
                 ) : (
@@ -307,11 +293,7 @@ const [messages, setMessages] = useState([]);
                 </select>
               </div>
 
-              <div className="chat-actions">
-                <button onClick={deleteCurrentConversation} className="btn-danger">
-                  🗑️ Delete
-                </button>
-              </div>
+
             </div>
 
             {/* Rest stays the same... */}
