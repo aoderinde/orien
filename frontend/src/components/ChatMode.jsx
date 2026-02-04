@@ -22,6 +22,35 @@ function ChatMode() {
   const autoSaveTimeout = useRef(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState('');
+  const conversationListRef = useRef(null);
+
+  // NEW: Load last conversation on mount
+  useEffect(() => {
+    loadLastConversation();
+  }, []);
+
+  const refreshConversationList = () => {
+    // Trigger reload in ConversationList component
+    if (conversationListRef.current) {
+      conversationListRef.current.reload();
+    }
+  };
+
+  const loadLastConversation = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/conversations`);
+      const conversations = response.data;
+
+      if (conversations.length > 0) {
+        // Load the most recent conversation
+        const lastConv = conversations[0];
+        loadConversation(lastConv);
+      }
+    } catch (error) {
+      console.error('Error loading last conversation:', error);
+      // Silently fail - user starts with empty chat
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,6 +100,7 @@ function ChatMode() {
       });
       setConversationTitle(editTitleValue.trim());
       setIsEditingTitle(false);
+      refreshConversationList(); // ← NEW: Refresh sidebar!
     } catch (error) {
       alert('Error updating title: ' + error.message);
     }
@@ -89,7 +119,6 @@ function ChatMode() {
 
     setIsSaving(true);
     try {
-      // Generate title if this is a new conversation with 2+ messages
       let title = conversationTitle;
       if (currentConversationId === 'new' && messages.length >= 2 && conversationTitle === 'New Conversation') {
         const titleResponse = await axios.post(`${API_URL}/api/conversations/generate-title`, {
@@ -109,6 +138,7 @@ function ChatMode() {
 
       if (response.data.created && response.data.conversationId) {
         setCurrentConversationId(response.data.conversationId);
+        refreshConversationList(); // ← NEW: Refresh sidebar when new chat created!
       }
 
       console.log('✅ Auto-saved');
@@ -234,6 +264,7 @@ function ChatMode() {
 
         <div className={`chat-sidebar ${showSidebar ? 'show' : ''}`}>
           <ConversationList
+              ref={conversationListRef}
               onSelectConversation={loadConversation}
               onNewChat={startNewChat}
               currentConvId={currentConversationId}
@@ -241,12 +272,6 @@ function ChatMode() {
         </div>
 
         <div className="chat-main">
-          <MemoryPanel />
-
-          <KnowledgeBase
-              activeKnowledgeIds={activeKnowledgeIds}
-              onToggleKnowledge={toggleKnowledge}
-          />
 
           <div className="chat-mode">
             <div className="chat-header">
@@ -368,7 +393,17 @@ function ChatMode() {
               </button>
             </div>
           </div>
+
+          <MemoryPanel />
+
+          <KnowledgeBase
+              activeKnowledgeIds={activeKnowledgeIds}
+              onToggleKnowledge={toggleKnowledge}
+          />
+
         </div>
+
+
       </div>
   );
 }

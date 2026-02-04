@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
+import {useState, useEffect, useImperativeHandle, forwardRef} from 'react';
 import axios from 'axios';
 import './ConversationList.css';
 import { MODELS } from '../models';
-
 import { API_URL } from '../config';
 
-function ConversationList({ onSelectConversation, onNewChat, currentConvId }) {
+const ConversationList = forwardRef(({ onSelectConversation, onNewChat, currentConvId }, ref) => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadConversations();
   }, []);
+
 
   const loadConversations = async () => {
     try {
@@ -23,6 +23,11 @@ function ConversationList({ onSelectConversation, onNewChat, currentConvId }) {
       setLoading(false);
     }
   };
+
+  // Expose reload function to parent via ref
+  useImperativeHandle(ref, () => ({
+    reload: loadConversations
+  }));
 
   const deleteConversation = async (id) => {
     if (!window.confirm('Delete this conversation?')) return;
@@ -111,6 +116,6 @@ function ConversationList({ onSelectConversation, onNewChat, currentConvId }) {
         )}
       </div>
   );
-}
+});
 
 export default ConversationList;

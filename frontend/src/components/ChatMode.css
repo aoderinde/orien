@@ -189,7 +189,7 @@
 
 .chat-message.user {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    color: white; /* ← Sollte schon da sein, aber sicherstellen! */
     margin-left: auto;
     border-bottom-right-radius: 4px;
 }
@@ -221,7 +221,12 @@
 }
 
 .chat-message.user .message-header {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.chat-message.user .message-content {
+    color: white; 
+    font-weight: 400;
 }
 
 .chat-message.assistant .message-header {
@@ -394,7 +399,7 @@ button:disabled {
         left: 0;
         top: 0;
         bottom: 0;
-        width: 280px;
+        width: 100%; /* ← Changed from 280px to 100%! */
         transform: translateX(-100%);
         z-index: 999;
         background: white;
@@ -422,9 +427,14 @@ button:disabled {
         min-height: 500px;
     }
 
+    /* Memory & KB panels below chat */
+    .chat-main > :not(.chat-mode) {
+        order: 2;
+    }
+
     .chat-mode {
-        height: 500px;
-        padding: 15px;
+        height: calc(100vh - 200px); /* Nearly full screen */
+        min-height: 500px;
     }
 
     .chat-header {

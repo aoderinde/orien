@@ -9,7 +9,7 @@ import GroupChat from './components/GroupChat';
 import { API_URL, WS_URL } from './config';
 
 function App() {
-  const [mode, setMode] = useState('ai-vs-ai');
+  const [mode, setMode] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('');
@@ -122,18 +122,18 @@ function App() {
         <header>
           <h1>🤖 AI Conversation Lab 💬</h1>
           <p className="subtitle">
-            {mode === 'ai-vs-ai' && 'AI vs AI'}
-            {mode === 'group' && 'Group Chat'}
             {mode === 'chat' && 'Chat Mode'}
+            {mode === 'group' && 'Group Chat'}
+            {mode === 'ai-vs-ai' && 'AI vs AI'}
           </p>
         </header>
 
         <div className="mode-toggle">
           <button
-              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-              onClick={() => setMode('ai-vs-ai')}
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => setMode('chat')}
           >
-            🤖 AI vs AI
+            💬 Chat Mode
           </button>
           <button
               className={`mode-btn ${mode === 'group' ? 'active' : ''}`}
@@ -142,10 +142,10 @@ function App() {
             👥 Group Chat
           </button>
           <button
-              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
-              onClick={() => setMode('chat')}
+              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+              onClick={() => setMode('ai-vs-ai')}
           >
-            💬 Chat Mode
+            🤖 AI vs AI
           </button>
         </div>
 
