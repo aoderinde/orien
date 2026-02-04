@@ -13,15 +13,20 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
 function App() {
   const [mode, setMode] = useState('chat');
+  const [showModeMenu, setShowModeMenu] = useState(false); // ← NEW
   const [messages, setMessages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [ws, setWs] = useState(null);
   const [currentModels, setCurrentModels] = useState(null);
   const messagesEndRef = useRef(null);
-
-  // NEW: Shared Knowledge Base state
   const [activeKnowledgeIds, setActiveKnowledgeIds] = useState([]);
+
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    setShowModeMenu(false); // ← Close menu after selection
+  };
+
 
   useEffect(() => {
     if (mode === 'ai-vs-ai') {
@@ -137,13 +142,44 @@ function App() {
   return (
       <div className="app">
         <header>
-          <h1>🤖 AI Conversation Lab 💬</h1>
+          <h1>🤖 Orien 💬</h1>
           <p className="subtitle">
             {mode === 'ai-vs-ai' && 'AI vs AI'}
             {mode === 'group' && 'Group Chat'}
             {mode === 'chat' && 'Chat Mode'}
           </p>
+          <button
+              className="mode-menu-toggle"
+              onClick={() => setShowModeMenu(!showModeMenu)}
+          >
+            ☰ Modes
+          </button>
         </header>
+
+        {showModeMenu && (
+            <div className="mode-menu-overlay" onClick={() => setShowModeMenu(false)}>
+              <div className="mode-menu" onClick={(e) => e.stopPropagation()}>
+                <button
+                    className={`mode-menu-item ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('ai-vs-ai')}
+                >
+                  🤖 AI vs AI
+                </button>
+                <button
+                    className={`mode-menu-item ${mode === 'group' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('group')}
+                >
+                  👥 Group Chat
+                </button>
+                <button
+                    className={`mode-menu-item ${mode === 'chat' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('chat')}
+                >
+                  💬 Chat Mode
+                </button>
+              </div>
+            </div>
+        )}
 
         <div className="mode-toggle">
           <button
@@ -165,6 +201,7 @@ function App() {
             💬 Chat Mode
           </button>
         </div>
+
 
         <div className="app-content">
           {mode === 'ai-vs-ai' && (

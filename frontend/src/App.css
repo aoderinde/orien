@@ -26,8 +26,10 @@ header {
   color: white;
   padding: 20px;
   flex-shrink: 0;
-  position: relative; /* ← NEW */
-  z-index: 20; /* ← NEW: Header on top */
+  position: sticky; /* ← LÖSCHEN */
+  top: 0; /* ← LÖSCHEN */
+  z-index: 100; /* ← LÖSCHEN */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 header h1 {
@@ -42,14 +44,22 @@ header h1 {
   font-weight: 300;
 }
 
+.mode-menu-toggle {
+  display: none;
+}
+
 .mode-toggle {
   display: flex;
   gap: 10px;
   justify-content: center;
   padding: 0 20px 20px 20px;
   flex-shrink: 0;
-  position: relative;
-  z-index: 10; /* ← NEW: Ensure buttons stay on top */
+  position: sticky; /* ← LÖSCHEN */
+  top: 0; /* ← LÖSCHEN */
+  z-index: 99; /* ← LÖSCHEN */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding-top: 10px;
+  margin-top: -10px;
 }
 
 .mode-btn {
@@ -168,9 +178,102 @@ header h1 {
     font-size: 2rem;
   }
 
+  .mode-menu-toggle {
+    display: block;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 20px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    z-index: 101;
+  }
+
   .mode-toggle {
-    flex-direction: column;
-    padding: 0 20px 15px 20px;
+    display: none; /* ← Hide desktop buttons on mobile */
+  }
+
+  .mode-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .mode-menu {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    background: white;
+    border-radius: 15px;
+    padding: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    min-width: 200px;
+    animation: slideDown 0.3s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .mode-menu-item {
+    display: block;
+    width: 100%;
+    padding: 15px 20px;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d3748;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 5px;
+  }
+
+  .mode-menu-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .mode-menu-item:hover {
+    background: #f7fafc;
+  }
+
+  .mode-menu-item.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+  }
+
+  header {
+    position: relative; /* ← For absolute positioning of toggle */
+  }
+
+  header h1 {
+    font-size: 1.8rem;
+    padding-right: 100px; /* ← Space for toggle button */
   }
 
   .mode-btn {
