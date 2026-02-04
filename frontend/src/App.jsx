@@ -1,0 +1,187 @@
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import './App.css';
+import ChatMessage from './components/ChatMessage';
+import ConversationControls from './components/ConversationControls';
+import ChatMode from './components/ChatMode';
+import GroupChat from './components/GroupChat';
+
+import { API_URL, WS_URL } from './config';
+
+function App() {
+  const [mode, setMode] = useState('ai-vs-ai');
+  const [messages, setMessages] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [status, setStatus] = useState('');
+  const [ws, setWs] = useState(null);
+  const [currentModels, setCurrentModels] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    if (mode === 'ai-vs-ai') {
+      const websocket = new WebSocket(WS_URL);
+
+      websocket.onopen = () => {
+        console.log('WebSocket connected');
+      };
+
+      websocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'history') {
+          setMessages(data.data);
+        } else if (data.type === 'message') {
+          setMessages(prev => [...prev, data.data]);
+        } else if (data.type === 'status') {
+          setStatus(data.data.status);
+          if (data.data.status === 'Conversation ended') {
+            setIsRunning(false);
+          }
+        } else if (data.type === 'error') {
+          alert('Error: ' + data.data.error);
+          setIsRunning(false);
+        }
+      };
+
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      setWs(websocket);
+
+      return () => websocket.close();
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const startConversation = async (initialPrompt, maxRounds, model1, model2) => {
+    try {
+      await axios.post(`${API_URL}/api/start`, {
+        initialPrompt,
+        maxRounds: parseInt(maxRounds),
+        model1,
+        model2
+      });
+      setIsRunning(true);
+      setMessages([]);
+      setCurrentModels({ model1, model2 });
+    } catch (error) {
+      alert('Error starting conversation: ' + error.message);
+    }
+  };
+
+  const stopConversation = async () => {
+    try {
+      await axios.post(`${API_URL}/api/stop`);
+      setIsRunning(false);
+      setCurrentModels(null);
+    } catch (error) {
+      alert('Error stopping conversation: ' + error.message);
+    }
+  };
+
+  const saveConversation = async () => {
+    try {
+      const response = await axios.post(`${API_URL}/api/save`);
+      const { filename, data } = response.data;
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('Error saving conversation: ' + error.message);
+    }
+  };
+
+  const sendMessage = async (target, message, model) => {
+    try {
+      if (isRunning) {
+        await axios.post(`${API_URL}/api/stop`);
+        setIsRunning(false);
+      }
+
+      await axios.post(`${API_URL}/api/message`, {
+        target,
+        message,
+        model
+      });
+    } catch (error) {
+      alert('Error sending message: ' + error.message);
+    }
+  };
+
+  return (
+      <div className="app">
+        <header>
+          <h1>🤖 AI Conversation Lab 💬</h1>
+          <p className="subtitle">
+            {mode === 'ai-vs-ai' && 'AI vs AI'}
+            {mode === 'group' && 'Group Chat'}
+            {mode === 'chat' && 'Chat Mode'}
+          </p>
+        </header>
+
+        <div className="mode-toggle">
+          <button
+              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+              onClick={() => setMode('ai-vs-ai')}
+          >
+            🤖 AI vs AI
+          </button>
+          <button
+              className={`mode-btn ${mode === 'group' ? 'active' : ''}`}
+              onClick={() => setMode('group')}
+          >
+            👥 Group Chat
+          </button>
+          <button
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => setMode('chat')}
+          >
+            💬 Chat Mode
+          </button>
+        </div>
+
+        {/* WRAPPER for content */}
+        <div className="app-content">
+          {mode === 'ai-vs-ai' && (
+              <>
+                <ConversationControls
+                    isRunning={isRunning}
+                    onStart={startConversation}
+                    onStop={stopConversation}
+                    onSave={saveConversation}
+                    onSendMessage={sendMessage}
+                    currentModels={currentModels}
+                />
+
+                {status && (
+                    <div className="status-bar">
+                      {status}
+                    </div>
+                )}
+
+                <div className="messages-container">
+                  {messages.map((msg) => (
+                      <ChatMessage key={msg.id} message={msg} />
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+              </>
+          )}
+
+          {mode === 'group' && <GroupChat />}
+          {mode === 'chat' && <ChatMode />}
+        </div>
+      </div>
+  );
+}
+
+export default App;
