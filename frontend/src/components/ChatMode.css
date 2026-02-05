@@ -10,6 +10,24 @@
     display: none;
 }
 
+/* NEW: Mobile Menu Button (top right) */
+.mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 1001;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.4rem;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
 .chat-sidebar {
     flex-shrink: 0;
     width: 300px;
@@ -36,7 +54,7 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 200px); /* Full height minus header */
+    height: calc(100vh - 200px);
     min-height: 600px;
 }
 
@@ -85,6 +103,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .model-selector label {
@@ -109,6 +128,19 @@
     border-color: #667eea;
 }
 
+.model-selector select:disabled {
+    background: #f7fafc;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* NEW: Model locked hint */
+.model-locked-hint {
+    font-size: 0.8rem;
+    color: #718096;
+    font-style: italic;
+}
+
 .chat-actions {
     display: flex;
     gap: 10px;
@@ -131,13 +163,12 @@
     margin-top: 10px;
 }
 
-/* 🎯 DESKTOP: Limit width for readability */
 .chat-messages {
     flex: 1;
     overflow-y: auto;
     padding: 20px 10px;
-    margin: 0 auto; /* Center it */
-    max-width: 900px; /* Limit width like Claude */
+    margin: 0 auto;
+    max-width: 900px;
     width: 100%;
     background: #f7fafc;
     border-radius: 10px;
@@ -291,7 +322,6 @@
     }
 }
 
-/* 🎯 DESKTOP: Input also centered with max-width */
 .chat-input-container {
     display: flex;
     gap: 10px;
@@ -329,7 +359,6 @@
     white-space: nowrap;
 }
 
-/* Button Styles */
 button {
     padding: 10px 20px;
     border: none;
@@ -433,19 +462,11 @@ button:disabled {
     border-color: #764ba2;
 }
 
-/* ========================================
-   🖥️ DESKTOP OPTIMIZATION (1025px+)
-   ======================================== */
-
 @media (min-width: 1025px) {
     .chat-mode {
-        height: calc(100vh - 120px); /* Nearly full screen on desktop */
+        height: calc(100vh - 120px);
     }
 }
-
-/* ========================================
-   📱 TABLET OPTIMIZATION
-   ======================================== */
 
 @media (max-width: 1024px) {
     .sidebar-toggle {
@@ -492,12 +513,12 @@ button:disabled {
     }
 }
 
-/* ========================================
-   📱 MOBILE FULL-SCREEN OPTIMIZATION
-   ======================================== */
-
 @media (max-width: 768px) {
-    /* 🎯 FULL VIEWPORT HEIGHT */
+    /* Show mobile menu button */
+    .mobile-menu-toggle {
+        display: block;
+    }
+
     .chat-mode-container {
         position: fixed;
         top: 0;
@@ -526,7 +547,6 @@ button:disabled {
         flex-direction: column;
     }
 
-    /* Header - Compact */
     .chat-header {
         flex-shrink: 0;
         padding: 12px 16px 12px 70px;
@@ -554,7 +574,6 @@ button:disabled {
         display: none;
     }
 
-    /* Knowledge bar - compact */
     .active-knowledge-bar {
         margin: 0;
         padding: 8px 16px;
@@ -563,13 +582,12 @@ button:disabled {
         flex-shrink: 0;
     }
 
-    /* Messages - Full width on mobile */
     .chat-messages {
         flex: 1;
         overflow-y: auto;
         padding: 16px 12px;
         margin: 0;
-        max-width: 100%; /* Full width on mobile */
+        max-width: 100%;
         border-radius: 0;
         background: #f7fafc;
         -webkit-overflow-scrolling: touch;
@@ -607,7 +625,6 @@ button:disabled {
         margin-bottom: 6px;
     }
 
-    /* 🎯 FIX: Input - Enter = New Line, Button = Send */
     .chat-input-container {
         flex-shrink: 0;
         padding: 12px 16px;
@@ -637,7 +654,6 @@ button:disabled {
         min-width: 70px;
     }
 
-    /* Sidebar toggle */
     .sidebar-toggle {
         top: 12px;
         left: 16px;
@@ -645,14 +661,12 @@ button:disabled {
         font-size: 1.1rem;
     }
 
-    /* Title editing */
     .title-edit-input {
         font-size: 1rem;
         padding: 4px 8px;
     }
 }
 
-/* Extra small devices */
 @media (max-width: 380px) {
     .chat-message {
         max-width: 90%;

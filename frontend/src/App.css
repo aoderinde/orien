@@ -165,7 +165,7 @@ header h1 .chat-bubble {
   max-width: 1600px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 20px 20px 20px;
+  padding: 10px 20px 20px 20px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -241,7 +241,6 @@ header h1 .chat-bubble {
 @media (min-width: 1025px) {
   /* Desktop: Use nearly full viewport for chat */
   body.chat-mode-active .app-content {
-    padding: 0;
     max-width: 100%;
   }
 
@@ -260,9 +259,9 @@ header h1 .chat-bubble {
    ======================================== */
 
 @media (max-width: 1024px) {
-  /* Hide Memory & Knowledge panels on tablet/mobile */
-  .memory-panel,
-  .knowledge-base {
+  /* Hide only when NOT in their dedicated modes */
+  body:not(.memory-mode-active) .memory-panel,
+  body:not(.knowledge-mode-active) .knowledge-base {
     display: none !important;
   }
 }
@@ -316,12 +315,11 @@ header h1 .chat-bubble {
 
   .mode-menu {
     right: 20px;
-    top: 120px;
     min-width: 200px;
   }
 
   .app-content {
-    padding: 0 10px 10px 10px;
+    padding: 10px 10px 10px 10px;
   }
 
   .messages-container {

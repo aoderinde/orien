@@ -7,13 +7,15 @@ import ChatMode from './components/ChatMode';
 import GroupChat from './components/GroupChat';
 import MemoryPanel from './components/MemoryPanel';
 import KnowledgeBase from './components/KnowledgeBase';
+import PersonaList from './components/PersonaList';
+import PersonaEditor from './components/PersonaEditor';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 
 function App() {
   const [mode, setMode] = useState('chat');
-  const [showModeMenu, setShowModeMenu] = useState(false); // ← NEW
+  const [showModeMenu, setShowModeMenu] = useState(false);
   const [messages, setMessages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('');
@@ -22,11 +24,67 @@ function App() {
   const messagesEndRef = useRef(null);
   const [activeKnowledgeIds, setActiveKnowledgeIds] = useState([]);
 
+  const [showPersonaEditor, setShowPersonaEditor] = useState(false);
+  const [editingPersona, setEditingPersona] = useState(null);
+  const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
+
   const handleModeChange = (newMode) => {
     setMode(newMode);
-    setShowModeMenu(false); // ← Close menu after selection
+    setShowModeMenu(false);
   };
 
+  // NEW: Function to open menu from ChatMode
+  const handleOpenMenu = () => {
+    setShowModeMenu(true);
+  };
+
+  const handleNewPersona = () => {
+    setEditingPersona(null);
+    setShowPersonaEditor(true);
+  };
+
+  const handleEditPersona = (persona) => {
+    setEditingPersona(persona);
+    setShowPersonaEditor(true);
+  };
+
+  const handleSelectPersona = (persona) => {
+    setSelectedPersonaForChat(persona);
+    setMode('chat');
+  };
+
+  const handleSavePersona = () => {
+    setShowPersonaEditor(false);
+    setEditingPersona(null);
+  };
+
+  const handleCancelPersona = () => {
+    setShowPersonaEditor(false);
+    setEditingPersona(null);
+  };
+
+  const toggleKnowledge = (fileId) => {
+    setActiveKnowledgeIds(prev =>
+        prev.includes(fileId)
+            ? prev.filter(id => id !== fileId)
+            : [...prev, fileId]
+    );
+  };
+
+  useEffect(() => {
+    // Add body class based on mode
+    if (mode === 'memory') {
+      document.body.classList.add('memory-mode-active');
+    } else {
+      document.body.classList.remove('memory-mode-active');
+    }
+
+    if (mode === 'knowledge') {
+      document.body.classList.add('knowledge-mode-active');
+    } else {
+      document.body.classList.remove('knowledge-mode-active');
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (mode === 'ai-vs-ai') {
@@ -65,7 +123,6 @@ function App() {
   }, [mode]);
 
   useEffect(() => {
-    // Only scroll if in AI vs AI mode AND messages exist
     if (mode === 'ai-vs-ai' && messages.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -83,7 +140,7 @@ function App() {
       setMessages([]);
       setCurrentModels({ model1, model2 });
     } catch (error) {
-      alert('Error starting conversation: ' + error.message);
+      alert('Error: ' + error.message);
     }
   };
 
@@ -91,37 +148,30 @@ function App() {
     try {
       await axios.post(`${API_URL}/api/stop`);
       setIsRunning(false);
-      setCurrentModels(null);
     } catch (error) {
-      alert('Error stopping conversation: ' + error.message);
+      alert('Error stopping: ' + error.message);
     }
   };
 
   const saveConversation = async () => {
     try {
       const response = await axios.post(`${API_URL}/api/save`);
-      const { filename, data } = response.data;
-
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(response.data.data, null, 2)], {
+        type: 'application/json'
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = response.data.filename;
       a.click();
-      window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert('Error saving conversation: ' + error.message);
+      alert('Error saving: ' + error.message);
     }
   };
 
   const sendMessage = async (target, message, model) => {
     try {
-      if (isRunning) {
-        await axios.post(`${API_URL}/api/stop`);
-        setIsRunning(false);
-      }
-
-      await axios.post(`${API_URL}/api/message`, {
+      const response = await axios.post(`${API_URL}/api/message`, {
         target,
         message,
         model
@@ -131,39 +181,33 @@ function App() {
     }
   };
 
-  const toggleKnowledge = (id) => {
-    setActiveKnowledgeIds(prev =>
-        prev.includes(id)
-            ? prev.filter(x => x !== id)
-            : [...prev, id]
-    );
-  };
-
   return (
       <div className="app">
         <header>
-          <h1>🤖 Orien 💬</h1>
-          <p className="subtitle">
-            {mode === 'chat' && 'Chat Mode'}
-            {mode === 'group' && 'Group Chat'}
-            {mode === 'ai-vs-ai' && 'AI vs AI'}
-          </p>
+          <h1>
+            <span className="logo">🤖</span> Orien <span className="chat-bubble">💬</span>
+          </h1>
+
           <button
               className="mode-menu-toggle"
               onClick={() => setShowModeMenu(!showModeMenu)}
           >
-            ☰ Modes
+            ☰ Menu
           </button>
-        </header>
 
+        </header>
         {showModeMenu && (
-            <div className="mode-menu-overlay" onClick={() => setShowModeMenu(false)}>
-              <div className="mode-menu" onClick={(e) => e.stopPropagation()}>
+            <>
+              <div
+                  className="mode-menu-overlay"
+                  onClick={() => setShowModeMenu(false)}
+              />
+              <div className="mode-menu">
                 <button
-                    className={`mode-menu-item ${mode === 'chat' ? 'active' : ''}`}
-                    onClick={() => handleModeChange('chat')}
+                    className={`mode-menu-item ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('ai-vs-ai')}
                 >
-                  💬 Chat Mode
+                  🤖 AI vs AI
                 </button>
                 <button
                     className={`mode-menu-item ${mode === 'group' ? 'active' : ''}`}
@@ -172,37 +216,35 @@ function App() {
                   👥 Group Chat
                 </button>
                 <button
-                    className={`mode-menu-item ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-                    onClick={() => handleModeChange('ai-vs-ai')}
+                    className={`mode-menu-item ${mode === 'chat' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('chat')}
                 >
-                  🤖 AI vs AI
+                  💬 Chat Mode
+                </button>
+
+                <div style={{ borderTop: '2px solid #e2e8f0', margin: '10px 0' }} />
+
+                <button
+                    className={`mode-menu-item ${mode === 'personas' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('personas')}
+                >
+                  👤 Manage Personas
+                </button>
+                <button
+                    className={`mode-menu-item ${mode === 'knowledge' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('knowledge')}
+                >
+                  📚 Knowledge Library
+                </button>
+                <button
+                    className={`mode-menu-item ${mode === 'memory' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('memory')}
+                >
+                  🧠 Memory
                 </button>
               </div>
-            </div>
+            </>
         )}
-
-        <div className="mode-toggle">
-          <button
-              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
-              onClick={() => setMode('chat')}
-          >
-            💬 Chat Mode
-          </button>
-          <button
-              className={`mode-btn ${mode === 'group' ? 'active' : ''}`}
-              onClick={() => setMode('group')}
-          >
-            👥 Group Chat
-          </button>
-          <button
-              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-              onClick={() => setMode('ai-vs-ai')}
-          >
-            🤖 AI vs AI
-          </button>
-        </div>
-
-
         <div className="app-content">
           {mode === 'ai-vs-ai' && (
               <>
@@ -246,16 +288,37 @@ function App() {
               <ChatMode
                   activeKnowledgeIds={activeKnowledgeIds}
                   onToggleKnowledge={toggleKnowledge}
+                  onOpenMenu={handleOpenMenu} // NEW: Pass handler for mobile menu
               />
           )}
 
-          {/* SHARED PANELS - Always at bottom! */}
-          <MemoryPanel />
-          <KnowledgeBase
-              activeKnowledgeIds={activeKnowledgeIds}
-              onToggleKnowledge={toggleKnowledge}
-          />
+          {mode === 'personas' && (
+              <PersonaList
+                  onSelectPersona={handleSelectPersona}
+                  onEditPersona={handleEditPersona}
+                  onNewPersona={handleNewPersona}
+              />
+          )}
+
+          {mode === 'knowledge' && (
+              <KnowledgeBase
+                  activeKnowledgeIds={activeKnowledgeIds}
+                  onToggleKnowledge={toggleKnowledge}
+              />
+          )}
+
+          {mode === 'memory' && (
+              <MemoryPanel />
+          )}
         </div>
+
+        {showPersonaEditor && (
+            <PersonaEditor
+                persona={editingPersona}
+                onSave={handleSavePersona}
+                onCancel={handleCancelPersona}
+            />
+        )}
       </div>
   );
 }

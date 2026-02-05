@@ -3,13 +3,15 @@ import axios from 'axios';
 import './ChatMode.css';
 import { MODELS } from '../models';
 import ConversationList from './ConversationList';
-
+import PersonaSelector from './PersonaSelector';
 import { API_URL } from '../config';
 
-function ChatMode({ activeKnowledgeIds, onToggleKnowledge }) {
-const [messages, setMessages] = useState([]);
+function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
+  const [selectedPersonaId, setSelectedPersonaId] = useState(null);
+  const [currentPersona, setCurrentPersona] = useState(null); // NEW: Store full persona
   const [isLoading, setIsLoading] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState('new');
   const [conversationTitle, setConversationTitle] = useState('New Conversation');
@@ -21,23 +23,36 @@ const [messages, setMessages] = useState([]);
   const [editTitleValue, setEditTitleValue] = useState('');
   const conversationListRef = useRef(null);
 
-  // NEW: Load last conversation on mount
   useEffect(() => {
-    loadLastConversation();
-  }, []);
-
-  useEffect(() => {
-    // Add class to body when ChatMode is active (for hiding header on mobile)
     document.body.classList.add('chat-mode-active');
-
     return () => {
-      // Remove class when component unmounts
       document.body.classList.remove('chat-mode-active');
     };
   }, []);
 
+  useEffect(() => {
+    loadLastConversation();
+  }, []);
+
+  // NEW: Load persona when selected
+  useEffect(() => {
+    if (selectedPersonaId) {
+      loadPersona(selectedPersonaId);
+    } else {
+      setCurrentPersona(null);
+    }
+  }, [selectedPersonaId]);
+
+  const loadPersona = async (personaId) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/personas/${personaId}`);
+      setCurrentPersona(response.data);
+    } catch (error) {
+      console.error('Error loading persona:', error);
+    }
+  };
+
   const refreshConversationList = () => {
-    // Trigger reload in ConversationList component
     if (conversationListRef.current) {
       conversationListRef.current.reload();
     }
@@ -49,33 +64,27 @@ const [messages, setMessages] = useState([]);
       const conversations = response.data;
 
       if (conversations.length > 0) {
-        // Load the most recent conversation
         const lastConv = conversations[0];
         loadConversation(lastConv);
       }
     } catch (error) {
       console.error('Error loading last conversation:', error);
-      // Silently fail - user starts with empty chat
     }
   };
 
   useEffect(() => {
-    // Only scroll when messages actually change (not on mount)
     if (messages.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // Auto-save whenever messages change
   useEffect(() => {
     if (messages.length === 0) return;
 
-    // Clear previous timeout
     if (autoSaveTimeout.current) {
       clearTimeout(autoSaveTimeout.current);
     }
 
-    // Set new timeout (debounce - save 2 seconds after last change)
     autoSaveTimeout.current = setTimeout(() => {
       autoSaveConversation();
     }, 2000);
@@ -110,7 +119,7 @@ const [messages, setMessages] = useState([]);
       });
       setConversationTitle(editTitleValue.trim());
       setIsEditingTitle(false);
-      refreshConversationList(); // ← NEW: Refresh sidebar!
+      refreshConversationList();
     } catch (error) {
       alert('Error updating title: ' + error.message);
     }
@@ -141,14 +150,15 @@ const [messages, setMessages] = useState([]);
       const response = await axios.post(`${API_URL}/api/conversations/autosave`, {
         conversationId: currentConversationId,
         mode: 'chat',
-        model: selectedModel,
+        model: currentPersona ? currentPersona.model : selectedModel, // FIX: Use persona model
         messages: messages,
-        title: title
+        title: title,
+        personaId: selectedPersonaId
       });
 
       if (response.data.created && response.data.conversationId) {
         setCurrentConversationId(response.data.conversationId);
-        refreshConversationList(); // ← NEW: Refresh sidebar when new chat created!
+        refreshConversationList();
       }
 
       console.log('✅ Auto-saved');
@@ -168,7 +178,8 @@ const [messages, setMessages] = useState([]);
       setCurrentConversationId(conv._id);
       setConversationTitle(conv.title || 'Conversation');
       setSelectedModel(conv.model1 || MODELS[0].id);
-      setShowSidebar(false); // Hide sidebar on mobile after selecting
+      setSelectedPersonaId(conv.personaId || null);
+      setShowSidebar(false);
     } catch (error) {
       console.error('Error loading conversation:', error);
       alert('Error loading conversation: ' + error.message);
@@ -180,6 +191,7 @@ const [messages, setMessages] = useState([]);
     setCurrentConversationId('new');
     setConversationTitle('New Conversation');
     setInput('');
+    setSelectedPersonaId(null);
     setShowSidebar(false);
   };
 
@@ -202,17 +214,21 @@ const [messages, setMessages] = useState([]);
         content: msg.content
       }));
 
+      // FIX: Use persona model if persona is selected
+      const modelToUse = currentPersona ? currentPersona.model : selectedModel;
+
       const response = await axios.post(`${API_URL}/api/chat`, {
-        model: selectedModel,
+        model: modelToUse, // FIX: Use correct model
         messages: apiMessages,
-        knowledgeBaseIds: activeKnowledgeIds
+        knowledgeBaseIds: activeKnowledgeIds,
+        personaId: selectedPersonaId
       });
 
       const assistantMessage = {
         role: 'assistant',
         content: response.data.message,
         timestamp: new Date().toISOString(),
-        model: selectedModel
+        model: modelToUse
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -231,29 +247,21 @@ const [messages, setMessages] = useState([]);
   };
 
   const handleKeyPress = (e) => {
-    // Desktop: Shift+Enter = new line, Enter = send
-    // Mobile: Enter = new line, Button = send
-
     if (e.key === 'Enter') {
-      // Check if we're on mobile (screen width < 768px)
       const isMobile = window.innerWidth <= 768;
 
       if (isMobile) {
-        // On mobile: Enter always creates new line
-        // User must click Send button to send
-        return; // Let default behavior (new line) happen
+        return;
       } else {
-        // On desktop: Enter sends (unless Shift is held)
         if (!e.shiftKey) {
           e.preventDefault();
           sendMessage();
         }
-        // If Shift+Enter, let default behavior (new line) happen
       }
     }
   };
 
-  const selectedModelInfo = MODELS.find(m => m.id === selectedModel);
+  const selectedModelInfo = MODELS.find(m => m.id === (currentPersona ? currentPersona.model : selectedModel));
 
   return (
       <div className="chat-mode-container">
@@ -262,6 +270,14 @@ const [messages, setMessages] = useState([]);
             onClick={() => setShowSidebar(!showSidebar)}
         >
           {showSidebar ? '✕' : '☰'}
+        </button>
+
+        {/* NEW: Mobile Menu Button (top right) */}
+        <button
+            className="mobile-menu-toggle"
+            onClick={onOpenMenu}
+        >
+          ⋮
         </button>
 
         <div className={`chat-sidebar ${showSidebar ? 'show' : ''}`}>
@@ -274,7 +290,6 @@ const [messages, setMessages] = useState([]);
         </div>
 
         <div className="chat-main">
-
           <div className="chat-mode">
             <div className="chat-header">
               <div className="conversation-title">
@@ -304,12 +319,17 @@ const [messages, setMessages] = useState([]);
                 {isSaving && <span className="saving-indicator">💾 Saving...</span>}
               </div>
 
+              <PersonaSelector
+                  selectedPersonaId={selectedPersonaId}
+                  onSelectPersona={setSelectedPersonaId}
+              />
+
               <div className="model-selector">
                 <label>Model:</label>
                 <select
-                    value={selectedModel}
+                    value={currentPersona ? currentPersona.model : selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    disabled={isLoading}
+                    disabled={isLoading || !!currentPersona} // FIX: Disabled when persona selected
                 >
                   {MODELS.map(model => (
                       <option key={model.id} value={model.id}>
@@ -317,12 +337,12 @@ const [messages, setMessages] = useState([]);
                       </option>
                   ))}
                 </select>
+                {currentPersona && (
+                    <span className="model-locked-hint">🔒 Model locked by Persona</span>
+                )}
               </div>
-
-
             </div>
 
-            {/* Rest stays the same... */}
             {activeKnowledgeIds.length > 0 && (
                 <div className="active-knowledge-bar">
                   📚 Using {activeKnowledgeIds.length} knowledge file{activeKnowledgeIds.length > 1 ? 's' : ''}
@@ -332,7 +352,7 @@ const [messages, setMessages] = useState([]);
             <div className="chat-messages">
               {messages.length === 0 && (
                   <div className="empty-state">
-                    <h3>👋 Start chatting with {selectedModelInfo?.name}!</h3>
+                    <h3>👋 Start chatting{currentPersona ? ` with ${currentPersona.name}` : ''}!</h3>
                     <p>Your conversation will be automatically saved.</p>
                     {activeKnowledgeIds.length > 0 && (
                         <p className="kb-hint">💡 Your selected knowledge files will be used as context!</p>
@@ -344,7 +364,7 @@ const [messages, setMessages] = useState([]);
                   <div key={idx} className={`chat-message ${msg.role} ${msg.isError ? 'error' : ''}`}>
                     <div className="message-header">
                   <span className="role">
-                    {msg.role === 'user' ? '👤 You' : `🤖 ${selectedModelInfo?.name || 'AI'}`}
+                    {msg.role === 'user' ? '👤 You' : `${currentPersona?.avatar || '🤖'} ${selectedModelInfo?.name || 'AI'}`}
                   </span>
                       <span className="timestamp">
                     {new Date(msg.timestamp).toLocaleTimeString()}
@@ -359,7 +379,7 @@ const [messages, setMessages] = useState([]);
               {isLoading && (
                   <div className="chat-message assistant loading">
                     <div className="message-header">
-                      <span className="role">🤖 {selectedModelInfo?.name}</span>
+                      <span className="role">{currentPersona?.avatar || '🤖'} {selectedModelInfo?.name}</span>
                     </div>
                     <div className="message-content">
                   <span className="typing-indicator">
@@ -390,9 +410,7 @@ const [messages, setMessages] = useState([]);
               </button>
             </div>
           </div>
-
         </div>
-
       </div>
   );
 }
