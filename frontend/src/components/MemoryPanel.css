@@ -74,7 +74,6 @@
 }
 
 .memory-list {
-    max-height: 300px;
     overflow-y: auto;
     margin-bottom: 15px;
     display: flex;
@@ -186,10 +185,6 @@
 
     .btn-save-memory {
         width: 100%;
-    }
-
-    .memory-list {
-        max-height: 200px;
     }
 
     .add-memory {
