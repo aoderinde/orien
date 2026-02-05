@@ -26,6 +26,16 @@ const [messages, setMessages] = useState([]);
     loadLastConversation();
   }, []);
 
+  useEffect(() => {
+    // Add class to body when ChatMode is active (for hiding header on mobile)
+    document.body.classList.add('chat-mode-active');
+
+    return () => {
+      // Remove class when component unmounts
+      document.body.classList.remove('chat-mode-active');
+    };
+  }, []);
+
   const refreshConversationList = () => {
     // Trigger reload in ConversationList component
     if (conversationListRef.current) {
@@ -221,9 +231,25 @@ const [messages, setMessages] = useState([]);
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+    // Desktop: Shift+Enter = new line, Enter = send
+    // Mobile: Enter = new line, Button = send
+
+    if (e.key === 'Enter') {
+      // Check if we're on mobile (screen width < 768px)
+      const isMobile = window.innerWidth <= 768;
+
+      if (isMobile) {
+        // On mobile: Enter always creates new line
+        // User must click Send button to send
+        return; // Let default behavior (new line) happen
+      } else {
+        // On desktop: Enter sends (unless Shift is held)
+        if (!e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+        // If Shift+Enter, let default behavior (new line) happen
+      }
     }
   };
 
