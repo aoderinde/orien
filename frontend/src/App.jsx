@@ -144,9 +144,9 @@ function App() {
         <header>
           <h1>🤖 Orien 💬</h1>
           <p className="subtitle">
-            {mode === 'ai-vs-ai' && 'AI vs AI'}
-            {mode === 'group' && 'Group Chat'}
             {mode === 'chat' && 'Chat Mode'}
+            {mode === 'group' && 'Group Chat'}
+            {mode === 'ai-vs-ai' && 'AI vs AI'}
           </p>
           <button
               className="mode-menu-toggle"
@@ -160,10 +160,10 @@ function App() {
             <div className="mode-menu-overlay" onClick={() => setShowModeMenu(false)}>
               <div className="mode-menu" onClick={(e) => e.stopPropagation()}>
                 <button
-                    className={`mode-menu-item ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-                    onClick={() => handleModeChange('ai-vs-ai')}
+                    className={`mode-menu-item ${mode === 'chat' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('chat')}
                 >
-                  🤖 AI vs AI
+                  💬 Chat Mode
                 </button>
                 <button
                     className={`mode-menu-item ${mode === 'group' ? 'active' : ''}`}
@@ -172,10 +172,10 @@ function App() {
                   👥 Group Chat
                 </button>
                 <button
-                    className={`mode-menu-item ${mode === 'chat' ? 'active' : ''}`}
-                    onClick={() => handleModeChange('chat')}
+                    className={`mode-menu-item ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+                    onClick={() => handleModeChange('ai-vs-ai')}
                 >
-                  💬 Chat Mode
+                  🤖 AI vs AI
                 </button>
               </div>
             </div>
@@ -183,10 +183,10 @@ function App() {
 
         <div className="mode-toggle">
           <button
-              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
-              onClick={() => setMode('ai-vs-ai')}
+              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => setMode('chat')}
           >
-            🤖 AI vs AI
+            💬 Chat Mode
           </button>
           <button
               className={`mode-btn ${mode === 'group' ? 'active' : ''}`}
@@ -195,10 +195,10 @@ function App() {
             👥 Group Chat
           </button>
           <button
-              className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
-              onClick={() => setMode('chat')}
+              className={`mode-btn ${mode === 'ai-vs-ai' ? 'active' : ''}`}
+              onClick={() => setMode('ai-vs-ai')}
           >
-            💬 Chat Mode
+            🤖 AI vs AI
           </button>
         </div>
 

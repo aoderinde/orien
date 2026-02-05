@@ -11,11 +11,13 @@
 
 .list-header {
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 2px solid #e2e8f0;
+    gap: 3px
 }
 
 .list-header h3 {
