@@ -10,7 +10,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
     deprecationErrors: true,
   },
   tls: true,
-  tlsAllowInvalidCertificates: true, // Only for production debugging
+  tlsAllowInvalidCertificates: true,
 });
 
 let db;
@@ -18,7 +18,6 @@ let db;
 export async function connectDB() {
   try {
     await client.connect();
-    // Test connection
     await client.db("admin").command({ ping: 1 });
     db = client.db('ai-chat');
     console.log('✅ Connected to MongoDB');
@@ -39,5 +38,6 @@ export function getDB() {
 export const collections = {
   conversations: () => getDB().collection('conversations'),
   memories: () => getDB().collection('memories'),
-  knowledgeBase: () => getDB().collection('knowledge_base')
+  knowledgeBase: () => getDB().collection('knowledge_base'),
+  personas: () => getDB().collection('personas') // NEW
 };

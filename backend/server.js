@@ -6,6 +6,7 @@ import { createServer } from 'http';
 import multer from 'multer';
 import { connectDB, collections } from './db.js';
 import AdmZip from 'adm-zip';
+import personasRouter from './personas.js';
 
 dotenv.config();
 
@@ -34,21 +35,17 @@ app.use(express.json());
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Connect to MongoDB
 await connectDB();
 
-// File upload config
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// Conversation storage (in-memory for AI vs AI mode)
 let conversations = [];
 let isRunning = false;
 let currentRound = 0;
 
-// WebSocket
 wss.on('connection', (ws) => {
   console.log('Client connected');
   ws.send(JSON.stringify({
@@ -65,7 +62,6 @@ function broadcast(data) {
   });
 }
 
-// Helper: Call AI
 async function callAI(model, message) {
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -96,6 +92,11 @@ function sleep(ms) {
 }
 
 // ========================================
+// PERSONA ROUTES
+// ========================================
+app.use('/api/personas', personasRouter);
+
+// ========================================
 // KNOWLEDGE BASE ENDPOINTS
 // ========================================
 
@@ -106,108 +107,62 @@ app.post('/api/knowledge-base/upload', upload.single('file'), async (req, res) =
     }
 
     const kb = collections.knowledgeBase();
-    const uploadedFiles = [];
+    const isZip = req.file.originalname.endsWith('.zip');
 
-    // Handle ZIP files
-    if (req.file.mimetype === 'application/zip' ||
-        req.file.mimetype === 'application/x-zip-compressed' ||
-        req.file.originalname.endsWith('.zip')) {
+    if (isZip) {
+      const zip = new AdmZip(req.file.buffer);
+      const zipEntries = zip.getEntries();
+      const uploadedFiles = [];
 
-      console.log('📦 Processing ZIP file...');
+      for (const entry of zipEntries) {
+        if (entry.isDirectory || entry.entryName.includes('__MACOSX')) continue;
 
-      try {
-        const zip = new AdmZip(req.file.buffer);
-        const zipEntries = zip.getEntries();
+        const content = entry.getData().toString('utf8');
+        const doc = {
+          title: entry.entryName,
+          filename: entry.entryName,
+          content: content,
+          size: entry.header.size,
+          type: 'text/plain',
+          tags: req.body.tags ? req.body.tags.split(',') : [],
+          uploadedAt: new Date(),
+          lastUsedAt: new Date(),
+          source: 'zip'
+        };
 
-        let txtFilesFound = 0;
-
-        for (const entry of zipEntries) {
-          // Skip directories and non-txt files
-          if (entry.isDirectory) continue;
-          if (!entry.entryName.endsWith('.txt')) continue;
-
-          // Skip macOS metadata files
-          if (entry.entryName.includes('__MACOSX') || entry.entryName.startsWith('._')) {
-            continue;
-          }
-
-          txtFilesFound++;
-
-          const content = entry.getData().toString('utf-8');
-          const filename = entry.entryName.split('/').pop(); // Get just filename, not path
-
-          const doc = {
-            title: filename,
-            filename: filename,
-            content: content,
-            size: content.length,
-            type: req.body.type || 'reference',
-            tags: req.body.tags ? req.body.tags.split(',') : [],
-            uploadedAt: new Date(),
-            lastUsedAt: new Date(),
-            source: 'zip',
-            zipFilename: req.file.originalname
-          };
-
-          const result = await kb.insertOne(doc);
-          uploadedFiles.push({
-            id: result.insertedId,
-            title: doc.title,
-            size: doc.size
-          });
-        }
-
-        if (txtFilesFound === 0) {
-          return res.status(400).json({
-            error: 'No .txt files found in ZIP archive'
-          });
-        }
-
-        console.log(`✅ Extracted ${txtFilesFound} .txt files from ZIP`);
-
-        return res.json({
-          success: true,
-          isZip: true,
-          filesUploaded: uploadedFiles.length,
-          files: uploadedFiles
-        });
-
-      } catch (zipError) {
-        console.error('ZIP extraction error:', zipError);
-        return res.status(400).json({
-          error: 'Failed to extract ZIP file: ' + zipError.message
-        });
+        const result = await kb.insertOne(doc);
+        uploadedFiles.push({ id: result.insertedId, title: doc.title });
       }
-    }
 
-    // Handle single text file (existing logic)
-    if (!req.file.mimetype.startsWith('text/')) {
-      return res.status(400).json({
-        error: 'Only .txt files or .zip archives containing .txt files are allowed'
+      res.json({
+        success: true,
+        isZip: true,
+        files: uploadedFiles,
+        count: uploadedFiles.length
+      });
+    } else {
+      const content = req.file.buffer.toString('utf8');
+      const doc = {
+        title: req.body.title || req.file.originalname,
+        filename: req.file.originalname,
+        content: content,
+        size: req.file.size,
+        type: req.file.mimetype,
+        tags: req.body.tags ? req.body.tags.split(',') : [],
+        uploadedAt: new Date(),
+        lastUsedAt: new Date(),
+        source: 'direct'
+      };
+
+      const result = await kb.insertOne(doc);
+
+      res.json({
+        success: true,
+        isZip: false,
+        id: result.insertedId,
+        title: doc.title
       });
     }
-
-    const doc = {
-      title: req.body.title || req.file.originalname,
-      filename: req.file.originalname,
-      content: req.file.buffer.toString('utf-8'),
-      size: req.file.size,
-      type: req.body.type || 'reference',
-      tags: req.body.tags ? req.body.tags.split(',') : [],
-      uploadedAt: new Date(),
-      lastUsedAt: new Date(),
-      source: 'direct'
-    };
-
-    const result = await kb.insertOne(doc);
-
-    res.json({
-      success: true,
-      isZip: false,
-      id: result.insertedId,
-      title: doc.title
-    });
-
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: error.message });
@@ -315,6 +270,7 @@ app.post('/api/conversations/save', async (req, res) => {
     const doc = {
       title: conversationData.title || 'Untitled Conversation',
       mode: conversationData.mode,
+      personaId: conversationData.personaId || null, // NEW
       model1: conversationData.model1,
       model2: conversationData.model2,
       messages: conversationData.messages,
@@ -344,6 +300,27 @@ app.patch('/api/conversations/:id', async (req, res) => {
         {
           $push: { messages: { $each: req.body.messages } },
           $set: { updatedAt: new Date() }
+        }
+    );
+
+    res.json({ success: true, modified: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/conversations/:id/title', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const convs = collections.conversations();
+
+    const result = await convs.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            title: req.body.title,
+            updatedAt: new Date()
+          }
         }
     );
 
@@ -415,78 +392,57 @@ app.post('/api/memories', async (req, res) => {
 });
 
 // ========================================
-// CHAT ENDPOINT (with knowledge base support)
+// CHAT ENDPOINT (PERSONA-AWARE)
 // ========================================
 
 app.post('/api/chat', async (req, res) => {
-  const { model, messages, knowledgeBaseIds } = req.body;
+  const { model, messages, knowledgeBaseIds, personaId } = req.body;
 
-  // DEBUG LOGGING (can keep this)
-  console.log('=== CHAT REQUEST DEBUG ===');
-  console.log('Requested Model:', model);
-  console.log('Model Provider:', model.split('/')[0]);
-  console.log('Model Name:', model.split('/')[1]);
-  console.log('==========================');
+  console.log('=== CHAT REQUEST ===');
+  console.log('Model:', model);
+  console.log('Persona:', personaId);
 
   try {
     let systemMessages = [];
 
-    // 0. Model Identity System Prompt (STRONGER VERSION!)
-    const modelName = model.split('/')[1] || 'AI Assistant';
-    const provider = model.split('/')[0] || 'Unknown';
+    // 1. Load Persona if provided
+    if (personaId) {
+      const { ObjectId } = await import('mongodb');
+      const personas = collections.personas();
+      const persona = await personas.findOne({ _id: new ObjectId(personaId) });
 
-    let identityPrompt = '';
+      if (persona) {
+        console.log('✅ Using Persona:', persona.name);
 
-    if (provider === 'anthropic') {
-      identityPrompt = `You are Claude, an AI assistant created by Anthropic. You are NOT GPT, ChatGPT, or any OpenAI model.`;
-      if (modelName.includes('opus')) {
-        identityPrompt += ` You are specifically Claude Opus 4.5, Anthropic's most capable model.`;
-      } else if (modelName.includes('sonnet')) {
-        identityPrompt += ` You are specifically Claude Sonnet 4.5, balanced for performance and capability.`;
-      } else if (modelName.includes('haiku')) {
-        identityPrompt += ` You are specifically Claude Haiku 4.5, Anthropic's fastest model.`;
+        // Add persona system prompt
+        if (persona.systemPrompt) {
+          systemMessages.push({
+            role: 'system',
+            content: persona.systemPrompt
+          });
+        }
+
+        // Load persona's knowledge files
+        if (persona.knowledgeIds && persona.knowledgeIds.length > 0) {
+          const kb = collections.knowledgeBase();
+          for (const knowledgeId of persona.knowledgeIds) {
+            try {
+              const file = await kb.findOne({ _id: new ObjectId(knowledgeId) });
+              if (file) {
+                systemMessages.push({
+                  role: 'system',
+                  content: `Reference document "${file.title}":\n\n${file.content}`
+                });
+              }
+            } catch (error) {
+              console.error('Error loading persona knowledge:', error);
+            }
+          }
+        }
       }
-    } else if (provider === 'openai') {
-      if (modelName.includes('gpt-4o')) {
-        identityPrompt = `You are GPT-4o, OpenAI's multimodal flagship model. You are NOT Claude or any Anthropic model.`;
-      } else if (modelName.includes('gpt-4')) {
-        identityPrompt = `You are GPT-4, OpenAI's most advanced language model. You are NOT Claude or any Anthropic model.`;
-      } else if (modelName.includes('gpt-3.5')) {
-        identityPrompt = `You are GPT-3.5 Turbo, OpenAI's fast and efficient model. You are NOT Claude or any Anthropic model.`;
-      }
-    } else if (provider === 'mistralai') {
-      identityPrompt = `IMPORTANT: You are Mistral Large 2, an advanced AI model created by Mistral AI, a French AI company. You are NOT GPT-4, NOT ChatGPT, and NOT any OpenAI model. You are NOT Claude or any Anthropic model. You are Mistral Large 2 by Mistral AI. When asked about your identity, you MUST state that you are Mistral Large 2 created by Mistral AI.`;
-    } else if (provider === 'nousresearch') {
-      identityPrompt = `You are Hermes 3, an advanced AI model by Nous Research, fine-tuned for reasoning and helpfulness. You are NOT GPT, Claude, or any other model. You are Hermes 3 by Nous Research.`;
-    } else if (provider === 'meta-llama') {
-      if (modelName.includes('llama-3.1')) {
-        identityPrompt = `You are Llama 3.1 405B, Meta's open-source large language model. You are NOT GPT, Claude, or any proprietary model. You are Llama 3.1 by Meta.`;
-      } else if (modelName.includes('llama-3.2')) {
-        identityPrompt = `You are Llama 3.2 90B Vision, Meta's multimodal AI model with vision capabilities. You are NOT GPT, Claude, or any proprietary model. You are Llama 3.2 by Meta.`;
-      }
-    } else if (provider === 'google') {
-      identityPrompt = `You are Gemini Pro, Google's advanced AI model. You are NOT GPT, Claude, or any other model. You are Gemini Pro by Google.`;
     }
 
-    if (identityPrompt) {
-      systemMessages.push({
-        role: 'system',
-        content: identityPrompt
-      });
-    }
-
-    // 1. Load user memories
-    const mems = collections.memories();
-    const userMemory = await mems.findOne({ userId: 'single_user' });
-
-    if (userMemory && userMemory.facts.length > 0) {
-      systemMessages.push({
-        role: 'system',
-        content: `Remember these facts about the user:\n${userMemory.facts.map(f => `- ${f}`).join('\n')}\n\nUse this information naturally in conversation.`
-      });
-    }
-
-    // 2. Load knowledge base files if provided
+    // 2. Load additional knowledge base files (if provided separately)
     if (knowledgeBaseIds && knowledgeBaseIds.length > 0) {
       const { ObjectId } = await import('mongodb');
       const kb = collections.knowledgeBase();
@@ -511,7 +467,7 @@ app.post('/api/chat', async (req, res) => {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3001',
-        'X-Title': 'AI Conversation Lab'
+        'X-Title': 'Orien Chat'
       },
       body: JSON.stringify({
         model: model,
@@ -527,14 +483,6 @@ app.post('/api/chat', async (req, res) => {
 
     const data = await response.json();
 
-    // DEBUG: Log what OpenRouter actually used
-    console.log('=== OPENROUTER RESPONSE ===');
-    console.log('Model used by OpenRouter:', data.model || 'not specified');
-    if (data.usage) {
-      console.log('Tokens used:', data.usage);
-    }
-    console.log('===========================');
-
     res.json({
       message: data.choices[0].message.content,
       usage: data.usage
@@ -547,7 +495,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ========================================
-// AI VS AI MODE (existing endpoints)
+// AI VS AI & AUTO-SAVE
 // ========================================
 
 app.post('/api/start', async (req, res) => {
@@ -618,12 +566,11 @@ app.post('/api/message', async (req, res) => {
 
 app.post('/api/conversations/autosave', async (req, res) => {
   try {
-    const { conversationId, mode, model, messages, title } = req.body;
+    const { conversationId, mode, model, messages, title, personaId } = req.body;
     const { ObjectId } = await import('mongodb');
     const convs = collections.conversations();
 
     if (conversationId && conversationId !== 'new') {
-      // Update existing conversation
       const result = await convs.updateOne(
           { _id: new ObjectId(conversationId) },
           {
@@ -640,10 +587,10 @@ app.post('/api/conversations/autosave', async (req, res) => {
         updated: result.modifiedCount
       });
     } else {
-      // Create new conversation
       const doc = {
         title: title || 'New Conversation',
         mode: mode || 'chat',
+        personaId: personaId || null, // NEW
         model1: model || 'anthropic/claude-sonnet-4.5',
         model2: null,
         messages: messages,
@@ -665,8 +612,6 @@ app.post('/api/conversations/autosave', async (req, res) => {
   }
 });
 
-// Generate conversation title using AI
-// Generate conversation title using AI
 app.post('/api/conversations/generate-title', async (req, res) => {
   try {
     const { messages } = req.body;
@@ -675,13 +620,13 @@ app.post('/api/conversations/generate-title', async (req, res) => {
       return res.json({ title: 'Untitled Chat' });
     }
 
-    // Get first few messages for context
     const context = messages.slice(0, 6)
         .map(m => `${m.role}: ${m.content.substring(0, 150)}`)
         .join('\n');
 
     const prompt = `Based on this conversation, generate a short, descriptive title (3-6 words max). Be specific and relevant to the topic discussed. DO NOT use generic titles like "New Conversation" or "Chat".
 
+Conversation:
 ${context}
 
 Title:`;
@@ -690,98 +635,40 @@ Title:`;
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:3001',
-        'X-Title': 'AI Conversation Lab'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: 'openai/gpt-3.5-turbo',
         max_tokens: 20,
-        temperature: 0.7,
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
-    if (!response.ok) {
-      throw new Error('Title generation failed');
-    }
-
     const data = await response.json();
     let title = data.choices[0].message.content.trim();
+    title = title.replace(/["']/g, '');
 
-    // Clean up title
-    title = title.replace(/^["']|["']$/g, ''); // Remove quotes
-    title = title.replace(/^Title:\s*/i, ''); // Remove "Title:" prefix
-    title = title.trim();
-
-    // Limit length
-    if (title.length > 60) {
-      title = title.substring(0, 57) + '...';
-    }
-
-    // Fallback if still generic
-    if (title.toLowerCase().includes('new conversation') || title.length < 3) {
-      title = 'Chat ' + new Date().toLocaleDateString();
-    }
-
-    res.json({ title: title });
+    res.json({ title });
   } catch (error) {
-    console.error('Title generation error:', error);
-    res.json({ title: 'Chat ' + new Date().toLocaleDateString() });
+    console.error('Error generating title:', error);
+    res.json({ title: 'Untitled Chat' });
   }
 });
 
-// NEW: Update conversation title
-app.patch('/api/conversations/:id/title', async (req, res) => {
+async function runConversation(initialPrompt, maxRounds, model1, model2) {
   try {
-    const { ObjectId } = await import('mongodb');
-    const convs = collections.conversations();
-    const { title } = req.body;
+    let currentMessage = initialPrompt;
 
-    if (!title || !title.trim()) {
-      return res.status(400).json({ error: 'Title is required' });
-    }
+    const model1Name = model1.split('/')[1] || 'AI #1';
+    const model2Name = model2.split('/')[1] || 'AI #2';
 
-    const result = await convs.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        {
-          $set: {
-            title: title.trim(),
-            updatedAt: new Date()
-          }
-        }
-    );
+    for (let round = 1; round <= maxRounds && isRunning; round++) {
+      currentRound = round;
+      broadcast({ type: 'status', data: { status: `Round ${round}/${maxRounds}`, round } });
 
-    res.json({ success: true, modified: result.modifiedCount });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+      broadcast({ type: 'status', data: { status: `${model1Name} is thinking...`, round } });
 
-async function runConversation(initialPrompt, maxRounds = 10, model1 = 'anthropic/claude-sonnet-4.5', model2 = 'openai/gpt-4o') {
-  let currentMessage = initialPrompt;
-  const model1Name = model1.split('/')[1] || 'AI #1';
-  const model2Name = model2.split('/')[1] || 'AI #2';
-
-  // NEW: Load user memory
-  const mems = collections.memories();
-  const userMemory = await mems.findOne({ userId: 'single_user' });
-
-  let memoryContext = '';
-  if (userMemory && userMemory.facts.length > 0) {
-    memoryContext = `\n\nBackground context about the user observing this conversation:\n${userMemory.facts.map(f => `- ${f}`).join('\n')}`;
-  }
-
-  try {
-    while (isRunning && currentRound < maxRounds) {
-      currentRound++;
-
-      broadcast({ type: 'status', data: { status: `${model1Name} is thinking...`, round: currentRound } });
-
-      // Add memory context to the message
-      const messageWithContext = currentMessage + memoryContext;
-
-      const message1 = await callAI(model1, messageWithContext);
+      const message1 = await callAI(model1, currentMessage);
       const entry1 = {
         id: Date.now(),
         speaker: model1Name,
@@ -799,7 +686,7 @@ async function runConversation(initialPrompt, maxRounds = 10, model1 = 'anthropi
 
       broadcast({ type: 'status', data: { status: `${model2Name} is thinking...`, round: currentRound } });
 
-      const message2 = await callAI(model2, message1 + memoryContext);
+      const message2 = await callAI(model2, message1);
       const entry2 = {
         id: Date.now() + 1,
         speaker: model2Name,
@@ -833,5 +720,5 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ Connected to MongoDB`);
-  console.log(`✅ Using OpenRouter with multiple models`);
+  console.log(`✅ Persona System enabled`);
 });
