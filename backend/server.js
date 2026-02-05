@@ -1,19 +1,6 @@
 import express from 'express';
 const app = express();
 
-// Basic Auth Middleware
-app.use((req, res, next) => {
-  const auth = req.headers.authorization;
-  const credentials = Buffer.from('admin:zwischenraum', 'utf8').base64encode();
-
-  if (auth === `Basic ${credentials}`) {
-    return next();
-  }
-
-  res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
-  res.status(401).send('Authentication required');
-});
-
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
@@ -32,6 +19,26 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://orien-tau.vercel.app',
 ];
+
+app.use((req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
+    return res.status(401).send('Auth required');
+  }
+
+  const base64Credentials = authHeader.split(' ')[1];
+  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf8');
+  const [username, password] = credentials.split(':');
+
+  if (username === process.env.AUTH_USERNAME && password === rocess.env.AUTH_PASSWORD) {
+    return next();
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
+  res.status(401).send('Wrong credentials');
+});
 
 app.use(cors({
   origin: function(origin, callback) {
