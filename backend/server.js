@@ -20,26 +20,6 @@ const allowedOrigins = [
   'https://orien-tau.vercel.app',
 ];
 
-app.use((req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
-    return res.status(401).send('Auth required');
-  }
-
-  const base64Credentials = authHeader.split(' ')[1];
-  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf8');
-  const [username, password] = credentials.split(':');
-
-  if (username === process.env.AUTH_USERNAME && password === rocess.env.AUTH_PASSWORD) {
-    return next();
-  }
-
-  res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
-  res.status(401).send('Wrong credentials');
-});
-
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
