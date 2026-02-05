@@ -24,9 +24,9 @@ export const MODELS = [
     description: 'Advanced reasoning and creativity'
   },
   {
-    id: 'mistralai/mistral-large-2407',
-    name: 'Mistral Large 2',
-    provider: 'Mistral AI',
+    id: 'mistralai/mixtral-8x22b-instruct',
+    name: 'Mixtral 8x22B Instruct',
+    provider: 'Mistral',
     description: 'European model, strong multilingual'
   },
   {
