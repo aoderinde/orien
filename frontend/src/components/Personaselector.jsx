@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import {useState, useEffect} from 'react';
 import axios from 'axios';
 import './PersonaSelector.css';
-import { API_URL } from '../config';
+import {API_URL} from '../config';
 
-function PersonaSelector({ selectedPersonaId, onSelectPersona }) {
+function PersonaSelector({selectedPersonaId, onSelectPersona}) {
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,19 +50,6 @@ function PersonaSelector({ selectedPersonaId, onSelectPersona }) {
               </option>
           ))}
         </select>
-
-        {selectedPersona && (
-            <div className="selected-persona-info">
-          <span className="persona-badge">
-            {selectedPersona.avatar} {selectedPersona.name}
-          </span>
-              {selectedPersona.knowledgeIds?.length > 0 && (
-                  <span className="knowledge-badge">
-              📚 {selectedPersona.knowledgeIds.length} files
-            </span>
-              )}
-            </div>
-        )}
       </div>
   );
 }

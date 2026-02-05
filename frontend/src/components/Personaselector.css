@@ -72,6 +72,10 @@
         width: 100%;
     }
 
+    .persona-selector label {
+        display: none;
+    }
+
     .persona-selector select {
         width: 100%;
     }

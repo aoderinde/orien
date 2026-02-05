@@ -28,14 +28,29 @@ function App() {
   const [editingPersona, setEditingPersona] = useState(null);
   const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
 
+  // NEW: Export handler reference
+  const exportChatHandler = useRef(null);
+
   const handleModeChange = (newMode) => {
     setMode(newMode);
     setShowModeMenu(false);
   };
 
-  // NEW: Function to open menu from ChatMode
   const handleOpenMenu = () => {
     setShowModeMenu(true);
+  };
+
+  // NEW: Handle export click from menu
+  const handleExportClick = () => {
+    setShowModeMenu(false);
+    if (exportChatHandler.current) {
+      exportChatHandler.current();
+    }
+  };
+
+  // NEW: Receive export handler from ChatMode
+  const handleExportHandlerReady = (handler) => {
+    exportChatHandler.current = handler;
   };
 
   const handleNewPersona = () => {
@@ -194,8 +209,9 @@ function App() {
           >
             ☰ Menu
           </button>
-
         </header>
+
+
         {showModeMenu && (
             <>
               <div
@@ -223,6 +239,16 @@ function App() {
                 </button>
 
                 <div style={{ borderTop: '2px solid #e2e8f0', margin: '10px 0' }} />
+
+                {/* NEW: Export Chat (only in chat mode) */}
+                {mode === 'chat' && (
+                    <button
+                        className="mode-menu-item"
+                        onClick={handleExportClick}
+                    >
+                      📥 Export Chat
+                    </button>
+                )}
 
                 <button
                     className={`mode-menu-item ${mode === 'personas' ? 'active' : ''}`}
@@ -288,7 +314,8 @@ function App() {
               <ChatMode
                   activeKnowledgeIds={activeKnowledgeIds}
                   onToggleKnowledge={toggleKnowledge}
-                  onOpenMenu={handleOpenMenu} // NEW: Pass handler for mobile menu
+                  onOpenMenu={handleOpenMenu}
+                  onRequestExport={handleExportHandlerReady}
               />
           )}
 

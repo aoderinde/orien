@@ -1,0 +1,260 @@
+.export-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.export-modal {
+    background: white;
+    border-radius: 20px;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.export-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 25px 30px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.export-header h3 {
+    margin: 0;
+    color: #2d3748;
+    font-size: 1.4rem;
+}
+
+.btn-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #718096;
+    padding: 5px 10px;
+    transition: all 0.2s;
+}
+
+.btn-close:hover {
+    color: #2d3748;
+    transform: scale(1.1);
+}
+
+.export-content {
+    padding: 30px;
+}
+
+.export-info {
+    margin-bottom: 25px;
+    padding: 15px;
+    background: #f7fafc;
+    border-radius: 10px;
+}
+
+.export-info p {
+    margin: 0;
+    color: #2d3748;
+}
+
+.export-meta {
+    margin-top: 5px;
+    font-size: 0.9rem;
+    color: #718096;
+}
+
+.export-format {
+    margin-bottom: 25px;
+}
+
+.export-format label {
+    display: block;
+    margin-bottom: 12px;
+    color: #2d3748;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.format-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.format-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 15px 20px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.format-btn:hover {
+    border-color: #667eea;
+    background: #f7fafc;
+}
+
+.format-btn.active {
+    border-color: #667eea;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+}
+
+.format-desc {
+    font-size: 0.85rem;
+    font-weight: normal;
+    color: #718096;
+    margin-top: 5px;
+}
+
+.export-options {
+    padding: 15px;
+    background: #f7fafc;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #2d3748;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #667eea;
+    flex-shrink: 0;
+}
+
+/* NEW: Knowledge checkbox special styling */
+.knowledge-checkbox {
+    padding: 10px;
+    background: linear-gradient(135deg, rgba(72, 187, 120, 0.1), rgba(56, 161, 105, 0.1));
+    border-radius: 8px;
+    border: 2px solid #48bb78;
+}
+
+.persona-assignment {
+    display: block;
+    font-size: 0.8rem;
+    color: #667eea;
+    margin-top: 4px;
+    margin-left: 30px;
+    font-weight: 600;
+}
+
+.export-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 30px;
+    border-top: 2px solid #e2e8f0;
+}
+
+.export-footer button {
+    padding: 12px 30px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary {
+    background: #f7fafc;
+    color: #4a5568;
+    border: 2px solid #e2e8f0;
+}
+
+.btn-secondary:hover {
+    background: #edf2f7;
+    border-color: #cbd5e0;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .export-modal {
+        max-width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .export-header,
+    .export-content,
+    .export-footer {
+        padding: 20px;
+    }
+
+    .export-footer {
+        flex-direction: column;
+    }
+
+    .export-footer button {
+        width: 100%;
+    }
+
+    .format-btn {
+        padding: 12px 15px;
+    }
+
+    .persona-assignment {
+        margin-left: 0;
+        margin-top: 6px;
+    }
+}

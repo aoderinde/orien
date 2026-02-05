@@ -1,29 +1,23 @@
 .conversation-list {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 15px;
-    padding: 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    height: 100%;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    background: white;
 }
 
-
-.list-header {
+.conversation-list-header {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+    justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
+    padding: 20px;
     border-bottom: 2px solid #e2e8f0;
-    gap: 3px
+    flex-shrink: 0;
 }
 
-.list-header h3 {
-    font-size: 1.3rem;
-    color: #2d3748;
+.conversation-list-header h3 {
     margin: 0;
+    color: #2d3748;
+    font-size: 1.2rem;
 }
 
 .btn-new-chat {
@@ -40,169 +34,199 @@
 
 .btn-new-chat:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
-.loading {
+.loading-conversations {
+    padding: 40px 20px;
     text-align: center;
-    padding: 40px;
     color: #718096;
 }
 
-.empty-list {
-    flex: 1;
+.empty-conversations {
+    padding: 60px 30px;
+    text-align: center;
+    color: #718096;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
-    text-align: center;
-    color: #718096;
-    gap: 15px;
+    gap: 20px;
 }
 
-.empty-list p {
-    font-size: 1rem;
+.empty-conversations p {
     margin: 0;
+    font-size: 1rem;
 }
 
-.list-items {
+.btn-new-chat-large {
+    padding: 12px 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 1rem;
+}
+
+.btn-new-chat-large:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.conversation-items {
     flex: 1;
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    padding: 10px;
 }
 
-.list-items::-webkit-scrollbar {
+.conversation-items::-webkit-scrollbar {
     width: 6px;
 }
 
-.list-items::-webkit-scrollbar-track {
+.conversation-items::-webkit-scrollbar-track {
     background: #f1f1f1;
-    border-radius: 10px;
 }
 
-.list-items::-webkit-scrollbar-thumb {
+.conversation-items::-webkit-scrollbar-thumb {
     background: #667eea;
     border-radius: 10px;
 }
 
-.list-item {
+.conversation-item {
     padding: 15px;
-    background: #f7fafc;
-    border: 2px solid #e2e8f0;
+    margin-bottom: 8px;
     border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s;
+    border: 2px solid transparent;
+    background: #f7fafc;
 }
 
-.list-item:hover {
-    border-color: #667eea;
+.conversation-item:hover {
     background: white;
-    transform: translateX(5px);
-}
-
-.list-item.active {
     border-color: #667eea;
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    transform: translateX(4px);
 }
 
-.item-header {
+.conversation-item.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+    border-color: #667eea;
+}
+
+.conv-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     margin-bottom: 8px;
 }
 
-.item-title {
+.conv-title {
     font-weight: 600;
     color: #2d3748;
-    font-size: 1rem;
+    font-size: 0.95rem;
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding-right: 8px;
 }
 
-.btn-delete {
+.btn-delete-conv {
     background: none;
     border: none;
     cursor: pointer;
     font-size: 1rem;
-    padding: 4px;
-    opacity: 0.6;
-    transition: opacity 0.2s;
+    opacity: 0.4;
+    transition: all 0.2s;
+    padding: 2px 6px;
 }
 
-.btn-delete:hover {
+.btn-delete-conv:hover {
     opacity: 1;
+    transform: scale(1.2);
 }
 
-.item-meta {
+.conv-meta {
     display: flex;
-    gap: 10px;
+    justify-content: space-between;
     align-items: center;
     margin-bottom: 8px;
-}
-
-.mode-badge {
-    background: #667eea;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.date {
     font-size: 0.8rem;
+}
+
+.conv-mode {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.conv-date {
     color: #718096;
 }
 
-.item-preview {
+/* NEW: Stats row (only on active item) */
+.conv-stats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.conv-stats span {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.stat-persona {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+    color: #667eea;
+}
+
+.stat-messages {
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.stat-knowledge {
+    background: rgba(72, 187, 120, 0.1);
+    color: #38a169;
+}
+
+.conv-preview {
     font-size: 0.85rem;
     color: #718096;
+    line-height: 1.4;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* Responsive */
+/* Mobile */
 @media (max-width: 768px) {
-
-    .list-item {
-        padding: 18px; /* ← Bigger touch target */
-        margin-bottom: 12px;
+    .conversation-list-header {
+        padding: 15px;
     }
 
-    .btn-delete {
-        font-size: 1.3rem; /* ← Bigger tap area */
-        padding: 8px 12px;
+    .empty-conversations {
+        padding: 40px 20px;
     }
 
-    .conversation-list {
-        max-width: 100%;
-        height: 500px;
+    .conversation-item {
+        padding: 12px;
     }
 
-    .list-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
+    .conv-stats {
+        gap: 6px;
     }
 
-    .btn-new-chat {
-        width: 100%;
+    .conv-stats span {
+        font-size: 0.7rem;
+        padding: 2px 6px;
     }
-}
-
-.model-badge {
-    background: #667eea;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-    font-weight: 600;
 }

@@ -1,17 +1,28 @@
-import {useState, useEffect, useImperativeHandle, forwardRef} from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import axios from 'axios';
 import './ConversationList.css';
-import { MODELS } from '../models';
 import { API_URL } from '../config';
 
-const ConversationList = forwardRef(({ onSelectConversation, onNewChat, currentConvId }, ref) => {
+const ConversationList = forwardRef(({
+                                       onSelectConversation,
+                                       onNewChat,
+                                       currentConvId,
+                                       currentPersonaId,
+                                       activeKnowledgeIds,
+                                       messageCount
+                                     }, ref) => {
   const [conversations, setConversations] = useState([]);
+  const [personas, setPersonas] = useState({});
   const [loading, setLoading] = useState(true);
+
+  useImperativeHandle(ref, () => ({
+    reload: loadConversations
+  }));
 
   useEffect(() => {
     loadConversations();
+    loadPersonas();
   }, []);
-
 
   const loadConversations = async () => {
     try {
@@ -24,94 +35,134 @@ const ConversationList = forwardRef(({ onSelectConversation, onNewChat, currentC
     }
   };
 
-  // Expose reload function to parent via ref
-  useImperativeHandle(ref, () => ({
-    reload: loadConversations
-  }));
+  const loadPersonas = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/personas`);
+      const personaMap = {};
+      response.data.forEach(p => {
+        personaMap[p._id] = p;
+      });
+      setPersonas(personaMap);
+    } catch (error) {
+      console.error('Error loading personas:', error);
+    }
+  };
 
-  const deleteConversation = async (id) => {
+  const deleteConversation = async (id, e) => {
+    e.stopPropagation();
+
     if (!window.confirm('Delete this conversation?')) return;
 
     try {
       await axios.delete(`${API_URL}/api/conversations/${id}`);
       setConversations(conversations.filter(c => c._id !== id));
+
+      if (currentConvId === id) {
+        onNewChat();
+      }
     } catch (error) {
       alert('Error deleting conversation: ' + error.message);
     }
   };
 
-  const formatDate = (date) => {
-    const d = new Date(date);
-    const now = new Date();
-    const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return d.toLocaleDateString();
-  };
-
-  const getModelName = (modelId) => {
-    if (!modelId) return 'Unknown Model';
-    const model = MODELS.find(m => m.id === modelId);
-    if (model) {
-      return model.name.split(' ')[0]; // e.g., "Claude" from "Claude Sonnet 4.5"
-    }
-    return modelId.split('/')[1]?.split('-')[0] || 'AI';
-  };
+  // Filter conversations by persona if one is selected
+  const filteredConversations = currentPersonaId
+      ? conversations.filter(c => c.personaId === currentPersonaId)
+      : conversations;
 
   return (
       <div className="conversation-list">
-        <div className="list-header">
+        <div className="conversation-list-header">
           <h3>💬 Conversations</h3>
           <button onClick={onNewChat} className="btn-new-chat">
-            ➕ New Chat
+            ✏️ New Chat
           </button>
         </div>
 
         {loading ? (
-            <div className="loading">Loading...</div>
-        ) : conversations.length === 0 ? (
-            <div className="empty-list">
-              <p>No conversations yet</p>
-              <button onClick={onNewChat} className="btn-primary">
-                Start your first chat!
-              </button>
+            <div className="loading-conversations">Loading...</div>
+        ) : filteredConversations.length === 0 ? (
+            <div className="empty-conversations">
+              {currentPersonaId ? (
+                  <>
+                    <p>No conversations with this persona yet.</p>
+                    <button onClick={onNewChat} className="btn-new-chat-large">
+                      Start Chatting
+                    </button>
+                  </>
+              ) : (
+                  <>
+                    <p>No conversations yet.</p>
+                    <button onClick={onNewChat} className="btn-new-chat-large">
+                      Start Your First Chat
+                    </button>
+                  </>
+              )}
             </div>
         ) : (
-            <div className="list-items">
-              {conversations.map(conv => (
-                  <div
-                      key={conv._id}
-                      className={`list-item ${currentConvId === conv._id ? 'active' : ''}`}
-                      onClick={() => onSelectConversation(conv)}
-                  >
-                    <div className="item-header">
-                      <span className="item-title">{conv.title}</span>
-                      <button
-                          className="btn-delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteConversation(conv._id);
-                          }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                    <div className="item-meta">
-                      <span className="mode-badge">{conv.mode}</span>
-                      {conv.model1 && (
-                          <span className="model-badge">
-                    🤖 {getModelName(conv.model1)}
+            <div className="conversation-items">
+              {filteredConversations.map(conv => {
+                const isActive = currentConvId === conv._id;
+                const persona = conv.personaId ? personas[conv.personaId] : null;
+                const msgCount = conv.messages?.length || 0;
+
+                return (
+                    <div
+                        key={conv._id}
+                        className={`conversation-item ${isActive ? 'active' : ''}`}
+                        onClick={() => onSelectConversation(conv)}
+                    >
+                      <div className="conv-header">
+                        <span className="conv-title">{conv.title || 'Untitled'}</span>
+                        <button
+                            onClick={(e) => deleteConversation(conv._id, e)}
+                            className="btn-delete-conv"
+                            title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+
+                      <div className="conv-meta">
+                  <span className="conv-mode">
+                    {conv.mode === 'chat' && '💬 CHAT'}
+                    {conv.mode === 'group' && '👥 GROUP'}
+                    {conv.mode === 'ai-vs-ai' && '🤖 AI vs AI'}
                   </span>
+                        <span className="conv-date">
+                    {new Date(conv.updatedAt).toLocaleDateString()}
+                  </span>
+                      </div>
+
+                      {/* NEW: Stats row (only for active conversation) */}
+                      {isActive && (
+                          <div className="conv-stats">
+                            {persona && (
+                                <span className="stat-persona">
+                        {persona.avatar} {persona.name}
+                      </span>
+                            )}
+                            {messageCount > 0 && (
+                                <span className="stat-messages">
+                        💬 {messageCount}
+                      </span>
+                            )}
+                            {persona.knowledgeIds?.length > 0 && (
+                                <span className="stat-knowledge">
+                        📚 {persona.knowledgeIds?.length}
+                      </span>
+                            )}
+                          </div>
                       )}
-                      <span className="date">{formatDate(conv.updatedAt)}</span>
+
+                      {conv.messages && conv.messages.length > 0 && (
+                          <div className="conv-preview">
+                            {conv.messages[conv.messages.length - 1].content.substring(0, 60)}...
+                          </div>
+                      )}
                     </div>
-                    <div className="item-preview">
-                      {conv.messages[conv.messages.length - 1]?.content.substring(0, 60)}...
-                    </div>
-                  </div>
-              ))}
+                );
+              })}
             </div>
         )}
       </div>

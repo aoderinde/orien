@@ -548,6 +548,7 @@ button:disabled {
     }
 
     .chat-header {
+        align-items: start;
         flex-shrink: 0;
         padding: 12px 16px 12px 70px;
         margin-bottom: 0;

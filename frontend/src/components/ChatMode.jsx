@@ -4,14 +4,15 @@ import './ChatMode.css';
 import { MODELS } from '../models';
 import ConversationList from './ConversationList';
 import PersonaSelector from './PersonaSelector';
+import ExportModal from './ExportModal';
 import { API_URL } from '../config';
 
-function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
+function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [selectedPersonaId, setSelectedPersonaId] = useState(null);
-  const [currentPersona, setCurrentPersona] = useState(null); // NEW: Store full persona
+  const [currentPersona, setCurrentPersona] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState('new');
   const [conversationTitle, setConversationTitle] = useState('New Conversation');
@@ -22,6 +23,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState('');
   const conversationListRef = useRef(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('chat-mode-active');
@@ -34,7 +36,6 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
     loadLastConversation();
   }, []);
 
-  // NEW: Load persona when selected
   useEffect(() => {
     if (selectedPersonaId) {
       loadPersona(selectedPersonaId);
@@ -42,6 +43,13 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
       setCurrentPersona(null);
     }
   }, [selectedPersonaId]);
+
+  // Expose export function to parent
+  useEffect(() => {
+    if (onRequestExport) {
+      onRequestExport(() => setShowExportModal(true));
+    }
+  }, [onRequestExport]);
 
   const loadPersona = async (personaId) => {
     try {
@@ -150,7 +158,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
       const response = await axios.post(`${API_URL}/api/conversations/autosave`, {
         conversationId: currentConversationId,
         mode: 'chat',
-        model: currentPersona ? currentPersona.model : selectedModel, // FIX: Use persona model
+        model: currentPersona ? currentPersona.model : selectedModel,
         messages: messages,
         title: title,
         personaId: selectedPersonaId
@@ -160,8 +168,6 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
         setCurrentConversationId(response.data.conversationId);
         refreshConversationList();
       }
-
-      console.log('✅ Auto-saved');
     } catch (error) {
       console.error('Auto-save error:', error);
     } finally {
@@ -214,11 +220,10 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
         content: msg.content
       }));
 
-      // FIX: Use persona model if persona is selected
       const modelToUse = currentPersona ? currentPersona.model : selectedModel;
 
       const response = await axios.post(`${API_URL}/api/chat`, {
-        model: modelToUse, // FIX: Use correct model
+        model: modelToUse,
         messages: apiMessages,
         knowledgeBaseIds: activeKnowledgeIds,
         personaId: selectedPersonaId
@@ -272,7 +277,6 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
           {showSidebar ? '✕' : '☰'}
         </button>
 
-        {/* NEW: Mobile Menu Button (top right) */}
         <button
             className="mobile-menu-toggle"
             onClick={onOpenMenu}
@@ -286,6 +290,9 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
               onSelectConversation={loadConversation}
               onNewChat={startNewChat}
               currentConvId={currentConversationId}
+              currentPersonaId={selectedPersonaId}
+              activeKnowledgeIds={activeKnowledgeIds}
+              messageCount={messages.length}
           />
         </div>
 
@@ -329,7 +336,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
                 <select
                     value={currentPersona ? currentPersona.model : selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    disabled={isLoading || !!currentPersona} // FIX: Disabled when persona selected
+                    disabled={isLoading || !!currentPersona}
                 >
                   {MODELS.map(model => (
                       <option key={model.id} value={model.id}>
@@ -338,25 +345,18 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
                   ))}
                 </select>
                 {currentPersona && (
-                    <span className="model-locked-hint">🔒 Model locked by Persona</span>
+                    <span className="model-locked-hint">🔒 Locked by Persona</span>
                 )}
               </div>
             </div>
 
-            {activeKnowledgeIds.length > 0 && (
-                <div className="active-knowledge-bar">
-                  📚 Using {activeKnowledgeIds.length} knowledge file{activeKnowledgeIds.length > 1 ? 's' : ''}
-                </div>
-            )}
+            {/* REMOVED: active-knowledge-bar (moved to sidebar) */}
 
             <div className="chat-messages">
               {messages.length === 0 && (
                   <div className="empty-state">
                     <h3>👋 Start chatting{currentPersona ? ` with ${currentPersona.name}` : ''}!</h3>
                     <p>Your conversation will be automatically saved.</p>
-                    {activeKnowledgeIds.length > 0 && (
-                        <p className="kb-hint">💡 Your selected knowledge files will be used as context!</p>
-                    )}
                   </div>
               )}
 
@@ -397,7 +397,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                placeholder="Type your message..."
                 rows="3"
                 disabled={isLoading}
             />
@@ -406,11 +406,20 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu }) {
                   disabled={!input.trim() || isLoading}
                   className="btn-primary send-button"
               >
-                {isLoading ? '⏳ Sending...' : '📤 Send'}
+                {isLoading ? '⏳' : 'Send'}
               </button>
             </div>
           </div>
         </div>
+        {showExportModal && (
+            <ExportModal
+                messages={messages}
+                conversationTitle={conversationTitle}
+                personaName={currentPersona?.name}
+                personaId={selectedPersonaId}  // ← ADD THIS
+                onClose={() => setShowExportModal(false)}
+            />
+        )}
       </div>
   );
 }
