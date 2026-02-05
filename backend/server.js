@@ -1,4 +1,19 @@
 import express from 'express';
+const app = express();
+
+// Basic Auth Middleware
+app.use((req, res, next) => {
+  const auth = req.headers.authorization;
+  const credentials = Buffer.from('admin:zwischenraum', 'utf8').base64encode();
+
+  if (auth === `Basic ${credentials}`) {
+    return next();
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="Orien"');
+  res.status(401).send('Authentication required');
+});
+
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
@@ -10,7 +25,6 @@ import personasRouter from './personas.js';
 
 dotenv.config();
 
-const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
