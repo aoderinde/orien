@@ -262,12 +262,6 @@ function App() {
                 >
                   📚 Knowledge Library
                 </button>
-                <button
-                    className={`mode-menu-item ${mode === 'memory' ? 'active' : ''}`}
-                    onClick={() => handleModeChange('memory')}
-                >
-                  🧠 Memory
-                </button>
               </div>
             </>
         )}

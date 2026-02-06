@@ -39,7 +39,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ========================================
-// CREATE PERSONA
+// CREATE PERSONA (WITH MEMORY STRUCTURE)
 // ========================================
 router.post('/', async (req, res) => {
   try {
@@ -57,6 +57,10 @@ router.post('/', async (req, res) => {
       avatar: avatar || '🤖',
       systemPrompt: systemPrompt || '',
       knowledgeIds: knowledgeIds || [],
+      memory: {
+        manualFacts: [],  // User-added facts
+        autoFacts: []     // AI-generated facts
+      },
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -131,8 +135,168 @@ router.delete('/:id', async (req, res) => {
 });
 
 // ========================================
-// GET PERSONA'S KNOWLEDGE
+// MEMORY ENDPOINTS
 // ========================================
+
+// GET PERSONA'S MEMORY
+router.get('/:id/memory', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+
+    const persona = await personas.findOne({ _id: new ObjectId(req.params.id) });
+
+    if (!persona) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    res.json(persona.memory || { manualFacts: [], autoFacts: [] });
+  } catch (error) {
+    console.error('Error fetching memory:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ADD MANUAL MEMORY FACT
+router.post('/:id/memory/manual', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+    const { fact } = req.body;
+
+    if (!fact) {
+      return res.status(400).json({ error: 'Fact is required' });
+    }
+
+    const result = await personas.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $push: { 'memory.manualFacts': fact.trim() },
+          $set: { updatedAt: new Date() }
+        }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error adding manual memory:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ADD AUTO MEMORY FACT (called by AI)
+router.post('/:id/memory/auto', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+    const { fact, conversationId } = req.body;
+
+    if (!fact) {
+      return res.status(400).json({ error: 'Fact is required' });
+    }
+
+    const autoFact = {
+      fact: fact.trim(),
+      timestamp: new Date(),
+      conversationId: conversationId || null
+    };
+
+    const result = await personas.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $push: { 'memory.autoFacts': autoFact },
+          $set: { updatedAt: new Date() }
+        }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    res.json({ success: true, fact: autoFact });
+  } catch (error) {
+    console.error('Error adding auto memory:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// REMOVE MANUAL MEMORY FACT
+router.delete('/:id/memory/manual/:index', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+
+    // First get the persona to access the array
+    const persona = await personas.findOne({ _id: new ObjectId(req.params.id) });
+
+    if (!persona) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    // Remove the fact at index
+    if (persona.memory && persona.memory.manualFacts && persona.memory.manualFacts[index] !== undefined) {
+      persona.memory.manualFacts.splice(index, 1);
+
+      await personas.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          {
+            $set: {
+              'memory.manualFacts': persona.memory.manualFacts,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing manual memory:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// REMOVE AUTO MEMORY FACT
+router.delete('/:id/memory/auto/:index', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+
+    const persona = await personas.findOne({ _id: new ObjectId(req.params.id) });
+
+    if (!persona) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    if (persona.memory && persona.memory.autoFacts && persona.memory.autoFacts[index] !== undefined) {
+      persona.memory.autoFacts.splice(index, 1);
+
+      await personas.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          {
+            $set: {
+              'memory.autoFacts': persona.memory.autoFacts,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing auto memory:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// KNOWLEDGE ENDPOINTS (unchanged)
+// ========================================
+
 router.get('/:id/knowledge', async (req, res) => {
   try {
     const { ObjectId } = await import('mongodb');
@@ -145,7 +309,6 @@ router.get('/:id/knowledge', async (req, res) => {
       return res.status(404).json({ error: 'Persona not found' });
     }
 
-    // Get all knowledge files for this persona
     const knowledgeFiles = await kb.find({
       _id: { $in: persona.knowledgeIds.map(id => new ObjectId(id)) }
     }).toArray();
@@ -157,9 +320,6 @@ router.get('/:id/knowledge', async (req, res) => {
   }
 });
 
-// ========================================
-// ADD KNOWLEDGE TO PERSONA
-// ========================================
 router.post('/:id/knowledge', async (req, res) => {
   try {
     const { ObjectId } = await import('mongodb');
@@ -189,9 +349,6 @@ router.post('/:id/knowledge', async (req, res) => {
   }
 });
 
-// ========================================
-// REMOVE KNOWLEDGE FROM PERSONA
-// ========================================
 router.delete('/:id/knowledge/:knowledgeId', async (req, res) => {
   try {
     const { ObjectId } = await import('mongodb');

@@ -3,6 +3,7 @@ import axios from 'axios';
 import './PersonaEditor.css';
 import { MODELS } from '../models';
 import { API_URL } from '../config';
+import MemoryPanel from './MemoryPanel';  // ← NEU
 
 function PersonaEditor({ persona, onSave, onCancel }) {
   const [name, setName] = useState('');
@@ -50,9 +51,9 @@ function PersonaEditor({ persona, onSave, onCancel }) {
       return;
     }
 
-    setIsSaving(true);
-
     try {
+      setIsSaving(true);
+
       const personaData = {
         name: name.trim(),
         model,
@@ -70,11 +71,8 @@ function PersonaEditor({ persona, onSave, onCancel }) {
       }
 
       onSave();
-
-      // Trigger reload in PersonaList
-      window.dispatchEvent(new Event('personasUpdated'));
-
     } catch (error) {
+      console.error('Error saving persona:', error);
       alert('Error saving persona: ' + error.message);
     } finally {
       setIsSaving(false);
@@ -85,18 +83,19 @@ function PersonaEditor({ persona, onSave, onCancel }) {
       <div className="persona-editor-overlay">
         <div className="persona-editor">
           <div className="editor-header">
-            <h2>{persona ? 'Edit Persona' : 'Create New Persona'}</h2>
+            <h2>{persona ? 'Edit Persona' : 'Create Persona'}</h2>
             <button onClick={onCancel} className="btn-close">✕</button>
           </div>
 
           <div className="editor-content">
-            {/* Avatar Selector */}
+            {/* Avatar */}
             <div className="form-group">
               <label>Avatar</label>
-              <div className="avatar-selector">
+              <div className="avatar-grid">
                 {emojiOptions.map(emoji => (
                     <button
                         key={emoji}
+                        type="button"
                         className={`avatar-option ${avatar === emoji ? 'active' : ''}`}
                         onClick={() => setAvatar(emoji)}
                     >
@@ -141,6 +140,14 @@ function PersonaEditor({ persona, onSave, onCancel }) {
               />
               <span className="form-hint">Define the persona's personality and behavior</span>
             </div>
+
+            {/* MEMORY PANEL - NEU */}
+            {persona && persona._id && (
+                <MemoryPanel
+                    personaId={persona._id}
+                    personaName={persona.name}
+                />
+            )}
 
             {/* Knowledge Files */}
             <div className="form-group">

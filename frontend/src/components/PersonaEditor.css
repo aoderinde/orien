@@ -111,6 +111,7 @@
     font-size: 1rem;
     font-family: inherit;
     transition: border-color 0.2s;
+    margin-bottom:0;
 }
 
 .form-group input:focus,
@@ -127,7 +128,6 @@
 
 .form-hint {
     display: block;
-    margin-top: 6px;
     font-size: 0.85rem;
     color: #718096;
 }
@@ -161,6 +161,10 @@
     border-color: #667eea;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     transform: scale(1.1);
+}
+
+.memory-panel {
+    margin: 40px 0;
 }
 
 .knowledge-list {

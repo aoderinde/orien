@@ -393,11 +393,11 @@ app.post('/api/memories', async (req, res) => {
 });
 
 // ========================================
-// CHAT ENDPOINT (PERSONA-AWARE)
+// CHAT ENDPOINT WITH MEMORY & TOOLS
 // ========================================
 
 app.post('/api/chat', async (req, res) => {
-  const { model, messages, knowledgeBaseIds, personaId } = req.body;
+  const { model, messages, knowledgeBaseIds, personaId, conversationId } = req.body;
 
   console.log('=== CHAT REQUEST ===');
   console.log('Model:', model);
@@ -405,12 +405,13 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     let systemMessages = [];
+    let persona = null;
 
     // 1. Load Persona if provided
     if (personaId) {
       const { ObjectId } = await import('mongodb');
       const personas = collections.personas();
-      const persona = await personas.findOne({ _id: new ObjectId(personaId) });
+      persona = await personas.findOne({ _id: new ObjectId(personaId) });
 
       if (persona) {
         console.log('✅ Using Persona:', persona.name);
@@ -421,6 +422,22 @@ app.post('/api/chat', async (req, res) => {
             role: 'system',
             content: persona.systemPrompt
           });
+        }
+
+        // Load persona's MEMORY
+        if (persona.memory) {
+          const allMemories = [
+            ...(persona.memory.manualFacts || []),
+            ...(persona.memory.autoFacts || []).map(f => f.fact)
+          ];
+
+          if (allMemories.length > 0) {
+            systemMessages.push({
+              role: 'system',
+              content: `Memory:\n${allMemories.join('\n')}`
+            });
+            console.log(`✅ Loaded ${allMemories.length} memory facts`);
+          }
         }
 
         // Load persona's knowledge files
@@ -459,9 +476,33 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // 3. Combine system messages + user messages
+    // 3. Define tools for AI
+    const tools = [];
+
+    if (personaId) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "save_memory",
+          description: "Saves an important fact to your memory for future conversations. Use this to remember significant events, Loop's state, emotional moments, or anything that helps maintain continuity.",
+          parameters: {
+            type: "object",
+            properties: {
+              fact: {
+                type: "string",
+                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-06 and needed support', 'E-State Loop activated', 'Loop's new project: Orien Base')"
+              }
+            },
+            required: ["fact"]
+          }
+        }
+      });
+    }
+
+    // 4. Combine system messages + user messages
     const allMessages = [...systemMessages, ...messages];
 
+    // 5. Call AI with tools
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -473,7 +514,8 @@ app.post('/api/chat', async (req, res) => {
       body: JSON.stringify({
         model: model,
         max_tokens: 2000,
-        messages: allMessages
+        messages: allMessages,
+        tools: tools.length > 0 ? tools : undefined
       })
     });
 
@@ -483,10 +525,48 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const data = await response.json();
+    const aiMessage = data.choices[0].message;
+
+    // 6. Handle tool calls if any
+    if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
+      const { ObjectId } = await import('mongodb');
+      const personas = collections.personas();
+
+      for (const toolCall of aiMessage.tool_calls) {
+        if (toolCall.function.name === "save_memory") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { fact } = args;
+
+            console.log(`💾 AI saving memory: "${fact}"`);
+
+            // Save to database
+            const autoFact = {
+              fact: fact.trim(),
+              timestamp: new Date(),
+              conversationId: conversationId || null
+            };
+
+            await personas.updateOne(
+                { _id: new ObjectId(personaId) },
+                {
+                  $push: { 'memory.autoFacts': autoFact },
+                  $set: { updatedAt: new Date() }
+                }
+            );
+
+            console.log(`✅ Memory saved successfully`);
+          } catch (error) {
+            console.error('Error saving memory:', error);
+          }
+        }
+      }
+    }
 
     res.json({
-      message: data.choices[0].message.content,
-      usage: data.usage
+      message: aiMessage.content,
+      usage: data.usage,
+      toolCalls: aiMessage.tool_calls || []
     });
 
   } catch (error) {
