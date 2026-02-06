@@ -24,6 +24,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
   const [editTitleValue, setEditTitleValue] = useState('');
   const conversationListRef = useRef(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [initialPersonaId, setInitialPersonaId] = useState(null);
 
   useEffect(() => {
     document.body.classList.add('chat-mode-active');
@@ -35,6 +36,13 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
   useEffect(() => {
     loadLastConversation();
   }, []);
+
+  useEffect(() => {
+    if (initialPersonaId) {
+      startNewChat();
+      setSelectedPersonaId(initialPersonaId);
+    }
+  }, [initialPersonaId]);
 
   useEffect(() => {
     if (selectedPersonaId) {

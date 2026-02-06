@@ -70,6 +70,10 @@ function PersonaEditor({ persona, onSave, onCancel }) {
       }
 
       onSave();
+
+      // Trigger reload in PersonaList
+      window.dispatchEvent(new Event('personasUpdated'));
+
     } catch (error) {
       alert('Error saving persona: ' + error.message);
     } finally {

@@ -27,6 +27,7 @@ function App() {
   const [showPersonaEditor, setShowPersonaEditor] = useState(false);
   const [editingPersona, setEditingPersona] = useState(null);
   const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
+  const [initialPersonaId, setInitialPersonaId] = useState(null);
 
   // NEW: Export handler reference
   const exportChatHandler = useRef(null);
@@ -64,8 +65,13 @@ function App() {
   };
 
   const handleSelectPersona = (persona) => {
-    setSelectedPersonaForChat(persona);
+    setInitialPersonaId(persona._id);
     setMode('chat');
+
+    // Trigger new chat with this persona in ChatMode
+    if (chatModeRef.current) {
+      chatModeRef.current.startNewChatWithPersona(persona._id);
+    }
   };
 
   const handleSavePersona = () => {

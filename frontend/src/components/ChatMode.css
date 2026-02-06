@@ -629,21 +629,24 @@ button:disabled {
     .chat-input-container {
         flex-shrink: 0;
         padding: 12px 16px;
-        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        padding-bottom: max(12px, env(safe-area-inset-bottom) + 40px);
+        position: sticky;
+        bottom: 0;
         background: white;
         border-top: 1px solid #e2e8f0;
         gap: 10px;
         flex-direction: row;
-        align-items: flex-end;
+        align-items: center;
         max-width: 100%;
     }
 
     .chat-input-container textarea {
-        padding: 10px 12px;
+        padding: 10px 12px 10px 12px;
         font-size: 1rem;
         max-height: 120px;
         border-radius: 20px;
         line-height: 1.4;
+        margin-bottom: 0;
     }
 
     .send-button {

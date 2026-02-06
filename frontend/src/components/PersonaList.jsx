@@ -11,6 +11,12 @@ function PersonaList({ onSelectPersona, onEditPersona, onNewPersona }) {
     loadPersonas();
   }, []);
 
+  useEffect(() => {
+    const handleUpdate = () => loadPersonas();
+    window.addEventListener('personasUpdated', handleUpdate);
+    return () => window.removeEventListener('personasUpdated', handleUpdate);
+  }, []);
+
   const loadPersonas = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/personas`);

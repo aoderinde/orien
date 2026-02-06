@@ -1,7 +1,7 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import {useState, useEffect, forwardRef, useImperativeHandle} from 'react';
 import axios from 'axios';
 import './ConversationList.css';
-import { API_URL } from '../config';
+import {API_URL} from '../config';
 
 const ConversationList = forwardRef(({
                                        onSelectConversation,
@@ -75,7 +75,7 @@ const ConversationList = forwardRef(({
         <div className="conversation-list-header">
           <h3>💬 Conversations</h3>
           <button onClick={onNewChat} className="btn-new-chat">
-            ✏️ New Chat
+            ✏️ New
           </button>
         </div>
 
@@ -124,27 +124,29 @@ const ConversationList = forwardRef(({
                       </div>
 
                       <div className="conv-meta">
-                  <span className="conv-mode">
-                    {conv.mode === 'chat' && '💬 CHAT'}
-                    {conv.mode === 'group' && '👥 GROUP'}
-                    {conv.mode === 'ai-vs-ai' && '🤖 AI vs AI'}
-                  </span>
-                        <span className="conv-date">
-                    {new Date(conv.updatedAt).toLocaleDateString()}
-                  </span>
+                        <div className="conv-mode-persona">
+                          <span className="conv-mode">
+                            {conv.mode === 'chat' && '💬 CHAT'}
+                            {conv.mode === 'group' && '👥 GROUP'}
+                            {conv.mode === 'ai-vs-ai' && '🤖 AI vs AI'}
+                          </span>
+                            {persona && (
+                                <span className="conv-persona-badge">
+                              {persona.avatar} {persona.name}
+                            </span>
+                            )}
+                          </div>
+                          <span className="conv-date">
+                          {new Date(conv.updatedAt).toLocaleDateString()}
+                        </span>
                       </div>
 
                       {/* NEW: Stats row (only for active conversation) */}
                       {isActive && (
                           <div className="conv-stats">
-                            {persona && (
-                                <span className="stat-persona">
-                        {persona.avatar} {persona.name}
-                      </span>
-                            )}
                             {messageCount > 0 && (
                                 <span className="stat-messages">
-                        💬 {messageCount}
+                        ✉️ {messageCount}
                       </span>
                             )}
                             {persona.knowledgeIds?.length > 0 && (

@@ -150,6 +150,7 @@
 
 .conv-meta {
     display: flex;
+    gap:5px;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 8px;
@@ -158,6 +159,21 @@
 
 .conv-mode {
     color: #667eea;
+    font-weight: 600;
+}
+
+.conv-mode-persona {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.conv-persona-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+    color: #667eea;
+    border-radius: 10px;
     font-weight: 600;
 }
 
