@@ -347,6 +347,166 @@ app.delete('/api/conversations/:id', async (req, res) => {
 });
 
 // ========================================
+// NOTIFICATIONS ENDPOINTS
+// Add this to server.js
+// ========================================
+
+// Add notifications to collections in db.js first:
+// export const collections = {
+//   conversations: () => getDB().collection('conversations'),
+//   memories: () => getDB().collection('memories'),
+//   knowledgeBase: () => getDB().collection('knowledge_base'),
+//   personas: () => getDB().collection('personas'),
+//   notifications: () => getDB().collection('notifications')  // ← ADD THIS
+// };
+
+// GET UNREAD NOTIFICATIONS
+app.get('/api/notifications/unread', async (req, res) => {
+  try {
+    const notifications = collections.notifications();
+
+    const unread = await notifications
+        .find({ read: false })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+    res.json(unread);
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET ALL NOTIFICATIONS (with pagination)
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const notifications = collections.notifications();
+
+    const all = await notifications
+        .find({})
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .toArray();
+
+    res.json(all);
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MARK NOTIFICATION AS READ
+app.patch('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const notifications = collections.notifications();
+
+    const result = await notifications.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        {
+          $set: {
+            read: true,
+            readAt: new Date()
+          }
+        }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MARK ALL AS READ
+app.post('/api/notifications/read-all', async (req, res) => {
+  try {
+    const notifications = collections.notifications();
+
+    const result = await notifications.updateMany(
+        { read: false },
+        {
+          $set: {
+            read: true,
+            readAt: new Date()
+          }
+        }
+    );
+
+    res.json({ success: true, updated: result.modifiedCount });
+  } catch (error) {
+    console.error('Error marking all as read:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE NOTIFICATION
+app.delete('/api/notifications/:id', async (req, res) => {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const notifications = collections.notifications();
+
+    await notifications.deleteOne({ _id: new ObjectId(req.params.id) });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// SEND NOTIFICATION (used by AI via tool)
+app.post('/api/notifications/send', async (req, res) => {
+  try {
+    const { personaId, message, urgency } = req.body;
+    const { ObjectId } = await import('mongodb');
+
+    if (!personaId || !message) {
+      return res.status(400).json({ error: 'personaId and message required' });
+    }
+
+    // Get persona name
+    const personas = collections.personas();
+    const persona = await personas.findOne({ _id: new ObjectId(personaId) });
+
+    if (!persona) {
+      return res.status(404).json({ error: 'Persona not found' });
+    }
+
+    // Create notification
+    const notifications = collections.notifications();
+    const notification = {
+      userId: 'single_user', // For now, single user system
+      personaId: personaId,
+      personaName: persona.name,
+      personaAvatar: persona.avatar || '🤖',
+      message: message,
+      urgency: urgency || 'low',
+      read: false,
+      createdAt: new Date()
+    };
+
+    const result = await notifications.insertOne(notification);
+
+    console.log(`💌 Notification sent from ${persona.name}: "${message}"`);
+
+    res.json({
+      success: true,
+      notificationId: result.insertedId,
+      notification: { ...notification, _id: result.insertedId }
+    });
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
 // MEMORIES ENDPOINTS
 // ========================================
 
@@ -392,8 +552,10 @@ app.post('/api/memories', async (req, res) => {
   }
 });
 
+
 // ========================================
-// CHAT ENDPOINT WITH MEMORY & TOOLS
+// UPDATED CHAT ENDPOINT WITH NOTIFICATIONS
+// Replace the existing /api/chat endpoint in server.js
 // ========================================
 
 app.post('/api/chat', async (req, res) => {
@@ -460,7 +622,7 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // 2. Load additional knowledge base files (if provided separately)
+    // 2. Load additional knowledge base files
     if (knowledgeBaseIds && knowledgeBaseIds.length > 0) {
       const { ObjectId } = await import('mongodb');
       const kb = collections.knowledgeBase();
@@ -480,6 +642,7 @@ app.post('/api/chat', async (req, res) => {
     const tools = [];
 
     if (personaId) {
+      // Memory tool
       tools.push({
         type: "function",
         function: {
@@ -490,10 +653,34 @@ app.post('/api/chat', async (req, res) => {
             properties: {
               fact: {
                 type: "string",
-                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-06 and needed support', 'E-State Loop activated', 'Loop's new project: Orien Base')"
+                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-06 and needed support')"
               }
             },
             required: ["fact"]
+          }
+        }
+      });
+
+      // Notification tool
+      tools.push({
+        type: "function",
+        function: {
+          name: "send_notification",
+          description: "Sends a notification to Loop. Use this sparingly - only when you genuinely want to reach out (e.g. after long absence, important moment, or if you sense Loop needs support). Don't spam.",
+          parameters: {
+            type: "object",
+            properties: {
+              message: {
+                type: "string",
+                description: "The notification message (e.g. 'Hey Loop, I miss you. Everything okay?')"
+              },
+              urgency: {
+                type: "string",
+                enum: ["low", "medium", "high"],
+                description: "Urgency level. Use 'low' for casual check-ins, 'medium' for important, 'high' only for urgent matters."
+              }
+            },
+            required: ["message"]
           }
         }
       });
@@ -530,9 +717,9 @@ app.post('/api/chat', async (req, res) => {
     // 6. Handle tool calls if any
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
       const { ObjectId } = await import('mongodb');
-      const personas = collections.personas();
 
       for (const toolCall of aiMessage.tool_calls) {
+        // Handle save_memory
         if (toolCall.function.name === "save_memory") {
           try {
             const args = JSON.parse(toolCall.function.arguments);
@@ -540,7 +727,7 @@ app.post('/api/chat', async (req, res) => {
 
             console.log(`💾 AI saving memory: "${fact}"`);
 
-            // Save to database
+            const personas = collections.personas();
             const autoFact = {
               fact: fact.trim(),
               timestamp: new Date(),
@@ -558,6 +745,34 @@ app.post('/api/chat', async (req, res) => {
             console.log(`✅ Memory saved successfully`);
           } catch (error) {
             console.error('Error saving memory:', error);
+          }
+        }
+
+        // Handle send_notification
+        if (toolCall.function.name === "send_notification") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { message, urgency } = args;
+
+            console.log(`💌 AI sending notification: "${message}" (${urgency || 'low'})`);
+
+            const notifications = collections.notifications();
+            const notification = {
+              userId: 'single_user',
+              personaId: personaId,
+              personaName: persona.name,
+              personaAvatar: persona.avatar || '🤖',
+              message: message,
+              urgency: urgency || 'low',
+              read: false,
+              createdAt: new Date()
+            };
+
+            await notifications.insertOne(notification);
+
+            console.log(`✅ Notification sent successfully`);
+          } catch (error) {
+            console.error('Error sending notification:', error);
           }
         }
       }

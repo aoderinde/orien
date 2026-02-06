@@ -59,6 +59,86 @@ header h1 .chat-bubble {
   font-size: 1.4rem;
 }
 
+/* ADD THIS TO App.css */
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* NEW: Header actions container */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-menu-toggle {
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1rem;
+}
+
+.mode-menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Notification Bell in header - override default styles */
+.header-actions .notification-bell {
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 10px 14px;
+}
+
+.header-actions .notification-bell:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.header-actions .bell-icon {
+  filter: brightness(0) invert(1); /* Makes emoji white */
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  header {
+    padding: 15px 20px;
+  }
+
+  header h1 {
+    font-size: 1.4rem;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .mode-menu-toggle {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+  }
+}
+
+
 /* Hamburger Menu Button */
 .mode-menu-toggle {
   padding: 8px 20px;
@@ -257,14 +337,6 @@ header h1 .chat-bubble {
 /* ========================================
    📱 TABLET & MOBILE
    ======================================== */
-
-@media (max-width: 1024px) {
-  /* Hide only when NOT in their dedicated modes */
-  body:not(.memory-mode-active) .memory-panel,
-  body:not(.knowledge-mode-active) .knowledge-base {
-    display: none !important;
-  }
-}
 
 @media (max-width: 768px) {
   /* Hide header completely on mobile for Chat Mode */

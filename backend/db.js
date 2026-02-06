@@ -39,5 +39,6 @@ export const collections = {
   conversations: () => getDB().collection('conversations'),
   memories: () => getDB().collection('memories'),
   knowledgeBase: () => getDB().collection('knowledge_base'),
-  personas: () => getDB().collection('personas') // NEW
+  personas: () => getDB().collection('personas'),
+  notifications: () => getDB().collection('notifications')  // NEW
 };

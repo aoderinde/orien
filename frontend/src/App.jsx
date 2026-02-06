@@ -9,6 +9,8 @@ import MemoryPanel from './components/MemoryPanel';
 import KnowledgeBase from './components/KnowledgeBase';
 import PersonaList from './components/PersonaList';
 import PersonaEditor from './components/PersonaEditor';
+import NotificationBell from './components/NotificationBell';
+import NotificationPanel from './components/NotificationPanel';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
@@ -27,7 +29,7 @@ function App() {
   const [showPersonaEditor, setShowPersonaEditor] = useState(false);
   const [editingPersona, setEditingPersona] = useState(null);
   const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
-
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
   // NEW: Export handler reference
   const exportChatHandler = useRef(null);
@@ -203,14 +205,22 @@ function App() {
             <span className="logo">🤖</span> Orien <span className="chat-bubble">💬</span>
           </h1>
 
-          <button
-              className="mode-menu-toggle"
-              onClick={() => setShowModeMenu(!showModeMenu)}
-          >
-            ☰ Menu
-          </button>
+          <div className="header-actions">
+            <NotificationBell onOpenPanel={() => setShowNotificationPanel(true)} />
+
+            <button
+                className="mode-menu-toggle"
+                onClick={() => setShowModeMenu(!showModeMenu)}
+            >
+              ☰ Menu
+            </button>
+          </div>
         </header>
 
+        <NotificationPanel
+            isOpen={showNotificationPanel}
+            onClose={() => setShowNotificationPanel(false)}
+        />
 
         {showModeMenu && (
             <>
@@ -261,6 +271,12 @@ function App() {
                     onClick={() => handleModeChange('knowledge')}
                 >
                   📚 Knowledge Library
+                </button>
+                <button
+                    className={`mode-menu-item`}
+                    onClick={() => setShowNotificationPanel(true)}
+                >
+                  📭 Notifications
                 </button>
               </div>
             </>
