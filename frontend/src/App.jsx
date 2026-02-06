@@ -202,7 +202,7 @@ function App() {
       <div className="app">
         <header>
           <h1>
-            <span className="logo">🤖</span> Orien <span className="chat-bubble">💬</span>
+            <span className="logo">💫</span> Orien <span className="chat-bubble"></span>
           </h1>
 
           <div className="header-actions">
