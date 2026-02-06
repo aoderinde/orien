@@ -7,7 +7,7 @@ import PersonaSelector from './PersonaSelector';
 import ExportModal from './ExportModal';
 import { API_URL } from '../config';
 
-function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
+function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPersonaId, onPersonaSet  }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
@@ -24,7 +24,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
   const [editTitleValue, setEditTitleValue] = useState('');
   const conversationListRef = useRef(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [initialPersonaId, setInitialPersonaId] = useState(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('chat-mode-active');
@@ -34,13 +34,26 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport }) {
   }, []);
 
   useEffect(() => {
-    loadLastConversation();
-  }, []);
+    if (!initialPersonaId) {  // ← Nur laden wenn KEINE Persona übergeben wird
+      loadLastConversation();
+    }
+  }, [initialPersonaId]);
 
   useEffect(() => {
-    if (initialPersonaId) {
-      startNewChat();
+
+    if (initialPersonaId && !hasInitialized) {
+      setMessages([]);
+      setCurrentConversationId('new');
+      setConversationTitle('New Conversation');
       setSelectedPersonaId(initialPersonaId);
+      setHasInitialized(true);
+    }
+  }, [initialPersonaId, hasInitialized]);
+
+  // Reset flag when persona changes manually
+  useEffect(() => {
+    if (!initialPersonaId) {
+      setHasInitialized(false);
     }
   }, [initialPersonaId]);
 
