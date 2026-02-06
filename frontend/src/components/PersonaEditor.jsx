@@ -14,7 +14,7 @@ function PersonaEditor({ persona, onSave, onCancel }) {
   const [selectedKnowledge, setSelectedKnowledge] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const emojiOptions = ['🤖', '🎸', '📚', '🎨', '🧠', '💡', '🌟', '🔬', '🎭', '🎯', '🎪', '🎬', '🎤', '🎧', '🎮', '⚡'];
+  const emojiOptions = ['🤖', '✨', '💫', '🌈', '🧠', '💡', '🌟', '⚡️', '☀️', '🌕', '☄️', '🌊', '🍀', '❤️', '💙', '⚡'];
 
   useEffect(() => {
     loadKnowledgeFiles();
