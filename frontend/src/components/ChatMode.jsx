@@ -6,6 +6,7 @@ import ConversationList from './ConversationList';
 import PersonaSelector from './PersonaSelector';
 import ExportModal from './ExportModal';
 import { API_URL } from '../config';
+import ReactMarkdown from 'react-markdown';
 
 function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPersonaId, onPersonaSet  }) {
   const [messages, setMessages] = useState([]);
@@ -392,7 +393,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
                   </span>
                     </div>
                     <div className="message-content">
-                      {msg.content}
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   </div>
               ))}
