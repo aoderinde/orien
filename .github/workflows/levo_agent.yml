@@ -6,9 +6,9 @@
 name: Levo Agent Check
 
 on:
-  # Run every 10 minutes
+  # Run every 15 minutes
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/15 * * * *'
 
   # Allow manual trigger
   workflow_dispatch:
