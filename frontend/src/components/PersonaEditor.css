@@ -241,6 +241,242 @@
     font-size: 0.8rem;
 }
 
+
+/* ========================================
+   AUTONOMY SECTION CSS
+   Add to PersonaEditor.css
+   ======================================== */
+
+.autonomy-header {
+    margin-bottom: 8px;
+}
+
+.autonomy-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.autonomy-toggle input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #667eea;
+}
+
+.toggle-label {
+    font-size: 0.95rem;
+}
+
+.autonomy-settings {
+    margin-top: 15px;
+    padding: 20px;
+    background: #f7fafc;
+    border-radius: 10px;
+    border: 2px solid #e2e8f0;
+}
+
+.interval-setting {
+    margin-bottom: 20px;
+}
+
+.interval-setting label {
+    display: block;
+    margin-bottom: 8px;
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.interval-input-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.interval-input-group input {
+    width: 100px;
+    padding: 10px 12px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.interval-input-group input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.interval-unit {
+    color: #718096;
+    font-size: 0.9rem;
+}
+
+.autonomy-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    border-left: 3px solid #667eea;
+}
+
+.info-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.info-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.info-text {
+    font-size: 0.85rem;
+    color: #4a5568;
+    line-height: 1.5;
+}
+
+.suggested-intervals {
+    padding-top: 15px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.suggested-label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: #718096;
+    font-weight: 600;
+}
+
+.interval-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+
+/* ========================================
+   WAKE UP PROMPT CSS
+   Add to PersonaEditor_autonomy.css
+   ======================================== */
+
+.wakeup-prompt-setting {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.wakeup-prompt-setting label {
+    display: block;
+    margin-bottom: 8px;
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.wakeup-prompt-textarea {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 120px;
+    transition: border-color 0.2s;
+}
+
+.wakeup-prompt-textarea:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.wakeup-prompt-textarea::placeholder {
+    color: #a0aec0;
+    font-style: italic;
+}
+
+.wakeup-prompt-example {
+    margin-top: 12px;
+    padding: 12px;
+    background: white;
+    border-left: 3px solid #48bb78;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #2d3748;
+    line-height: 1.6;
+}
+
+.wakeup-prompt-example strong {
+    color: #48bb78;
+    display: block;
+    margin-bottom: 6px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .wakeup-prompt-textarea {
+        font-size: 0.85rem;
+    }
+}
+
+.preset-btn {
+    padding: 8px 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    color: #4a5568;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    transform: translateY(-1px);
+}
+
+.preset-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: #667eea;
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .interval-presets {
+        flex-direction: column;
+    }
+
+    .preset-btn {
+        width: 100%;
+        text-align: center;
+    }
+
+    .interval-input-group {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .interval-input-group input {
+        width: 100%;
+    }
+}
+
 .editor-footer {
     display: flex;
     justify-content: flex-end;

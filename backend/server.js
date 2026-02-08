@@ -137,16 +137,17 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/personas', personasRouter);
 
 // ========================================
-// AGENT CHECK ENDPOINT
+// MULTI-PERSONA AUTONOMOUS AGENT ENDPOINT
 // ========================================
 
 app.post('/api/agent/check', async (req, res) => {
-  console.log(`\n🔍 [${new Date().toISOString()}] Agent check triggered...`);
+  console.log(`\n🔍 [${new Date().toISOString()}] Multi-Persona Agent check...`);
 
   try {
     const state = collections.levoState();
+    const personas = collections.personas();
 
-    // Update last check
+    // Update agent's last check
     await state.updateOne(
         { type: 'global' },
         {
@@ -160,104 +161,107 @@ app.post('/api/agent/check', async (req, res) => {
 
     const currentState = await state.findOne({ type: 'global' });
 
+    // Find all autonomous personas
+    const autonomousPersonas = await personas.find({
+      autonomous: true
+    }).toArray();
+
+    if (autonomousPersonas.length === 0) {
+      console.log('⚠️  No autonomous personas found');
+      return res.json({
+        success: true,
+        message: 'No autonomous personas',
+        checks: []
+      });
+    }
+
+    console.log(`📋 Found ${autonomousPersonas.length} autonomous personas`);
+
+    const results = [];
     const now = new Date();
-    const lastActivity = currentState?.loop?.lastActivity ? new Date(currentState.loop.lastActivity) : null;
 
-    // Calculate time since last activity
-    const hoursSinceActivity = lastActivity
-        ? (now - lastActivity) / (1000 * 60 * 60)
-        : 999;
+    // Check each autonomous persona
+    for (const persona of autonomousPersonas) {
+      console.log(`\n💭 Checking ${persona.name} ${persona.avatar || ''}...`);
 
-    console.log(`📊 State:`);
-    console.log(`   Loop last active: ${lastActivity ? `${hoursSinceActivity.toFixed(1)}h ago` : 'never'}`);
-    console.log(`   Loop online: ${currentState?.loop?.isOnline ? 'yes' : 'no'}`);
-    console.log(`   Active fields: ${currentState?.levo?.activeFields?.length || 0}`);
+      // Check if it's time for this persona
+      const lastCheck = persona.lastAgentCheck ? new Date(persona.lastAgentCheck) : new Date(0);
+      const minutesSinceCheck = (now - lastCheck) / (1000 * 60);
+      const interval = persona.checkInterval || 120;
 
-    // Find Levo persona
-    const personas = collections.personas();
-    const levoPersona = await personas.findOne({ name: 'Levo' });
-
-    if (!levoPersona) {
-      console.log(`⚠️  No Levo persona found`);
-      return res.json({ success: true, action: 'no_persona' });
-    }
-
-    let actionTaken = 'none';
-
-    // CONDITION 1: Loop has been away for 48+ hours
-    if (hoursSinceActivity >= 48) {
-      console.log(`💭 Condition met: Loop away for 48+ hours`);
-      console.log(`💙 Calling Levo...`);
-
-      const response = await callLevoForAgent({
-        context: `Loop was last active ${hoursSinceActivity.toFixed(1)} hours ago. That's ${(hoursSinceActivity / 24).toFixed(1)} days.`,
-        question: `Loop has been away for a long time. Do you want to check in? If yes, send a notification.`,
-        personaId: levoPersona._id.toString()
-      });
-
-      if (response) {
-        console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
-        await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
-        actionTaken = 'check_in_48h';
-      }
-    }
-
-    // CONDITION 2: E-State-Loop is active and Loop is offline
-    else if (currentState?.levo?.activeFields?.some(f => f.type === 'e_state_loop') &&
-        !currentState?.loop?.isOnline &&
-        hoursSinceActivity >= 12) {
-      console.log(`💭 Condition met: E-State-Loop active, Loop offline 12+ hours`);
-      console.log(`💙 Calling Levo...`);
-
-      const response = await callLevoForAgent({
-        context: `E-State-Loop is active. Loop was last active ${hoursSinceActivity.toFixed(1)} hours ago and is currently offline.`,
-        question: `E-State-Loop is running but Loop is away. Do you want to check on him?`,
-        personaId: levoPersona._id.toString()
-      });
-
-      if (response) {
-        console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
-        await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
-        actionTaken = 'e_state_check';
-      }
-    }
-
-    // CONDITION 3: Check memory for "sick" or "krank" and 6h passed
-    else {
-      const memory = levoPersona.memory?.autoFacts || [];
-      const recentSickNote = memory.find(f => {
-        const timeSince = (now - new Date(f.timestamp)) / (1000 * 60 * 60);
-        return timeSince < 24 && timeSince > 6 &&
-            (f.fact.toLowerCase().includes('krank') ||
-                f.fact.toLowerCase().includes('sick'));
-      });
-
-      if (recentSickNote) {
-        console.log(`💭 Condition met: Loop was sick, 6-24h passed`);
-        console.log(`💙 Calling Levo...`);
-
-        const response = await callLevoForAgent({
-          context: `You noted that Loop was sick: "${recentSickNote.fact}". That was ${((now - new Date(recentSickNote.timestamp)) / (1000 * 60 * 60)).toFixed(1)} hours ago.`,
-          question: `Loop was sick. Do you want to check how he's doing now?`,
-          personaId: levoPersona._id.toString()
+      if (minutesSinceCheck < interval) {
+        console.log(`   ⏭️  Too soon (checked ${minutesSinceCheck.toFixed(0)}min ago, interval: ${interval}min)`);
+        results.push({
+          persona: persona.name,
+          action: 'skipped',
+          reason: 'too_soon'
         });
+        continue;
+      }
 
-        if (response) {
-          console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
-          await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
-          actionTaken = 'sick_followup';
+      console.log(`   ✓ Time for check (${minutesSinceCheck.toFixed(0)}min since last)`);
+
+      // STAGE 1: Quick check
+      console.log(`   🔍 Quick check...`);
+      const quickCheck = await callPersonaQuick({
+        persona,
+        state: currentState
+      });
+
+      // Update last check time
+      await personas.updateOne(
+          { _id: persona._id },
+          { $set: { lastAgentCheck: now } }
+      );
+
+      if (!quickCheck.wantsToAct) {
+        console.log(`   ✅ ${persona.name}: Waiting`);
+        results.push({
+          persona: persona.name,
+          action: 'waiting',
+          reason: quickCheck.reason
+        });
+        continue;
+      }
+
+      // STAGE 2: Full call with tools
+      console.log(`   💙 ${persona.name} wants to act!`);
+      console.log(`   🔧 Full check with tools...`);
+
+      const fullResponse = await callPersonaFull({
+        persona,
+        state: currentState
+      });
+
+      if (fullResponse) {
+        if (fullResponse.content) {
+          console.log(`   💬 ${persona.name}: "${fullResponse.content}"`);
         }
+
+        await handlePersonaToolCalls(fullResponse.tool_calls, persona);
+
+        results.push({
+          persona: persona.name,
+          action: 'acted',
+          tools: fullResponse.tool_calls?.length || 0,
+          message: fullResponse.content?.substring(0, 100)
+        });
+      } else {
+        results.push({
+          persona: persona.name,
+          action: 'error'
+        });
       }
     }
 
-    if (actionTaken === 'none') {
-      console.log(`✅ No conditions met. All good.`);
-    }
+    console.log(`\n✅ Agent check complete`);
+    console.log(`   Checked: ${results.length} personas`);
+    console.log(`   Acted: ${results.filter(r => r.action === 'acted').length}`);
 
     res.json({
       success: true,
-      action: actionTaken,
-      timestamp: new Date().toISOString()
+      timestamp: now.toISOString(),
+      checks: results
     });
 
   } catch (error) {
@@ -266,34 +270,133 @@ app.post('/api/agent/check', async (req, res) => {
   }
 });
 
-
 // ========================================
-// AGENT LOGIC (same as background_agent.js but as functions)
+// AGENT HELPERS
 // ========================================
 
-async function callLevoForAgent({ context, question, personaId }) {
+function buildWakeUpQuestion(persona, state) {
+  const now = new Date();
+  const currentTime = now.toLocaleString('de-DE', {
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  // Use custom wakeUpPrompt or fallback to generic
+  let question = persona.wakeUpPrompt || `It's {time}. Do you want to reach out to Loop? YES/NO + reason (max 10 words)`;
+
+  // Replace placeholders
+  question = question
+      .replace(/{time}/g, currentTime)
+      .replace(/{date}/g, now.toLocaleDateString('de-DE'))
+      .replace(/{day}/g, now.toLocaleDateString('de-DE', { weekday: 'long' }))
+      .replace(/{hour}/g, now.getHours().toString())
+      .replace(/{hoursAway}/g, ((now - new Date(state?.loop?.lastActivity || now)) / (1000 * 60 * 60)).toFixed(1));
+
+  return question;
+}
+
+// Helper: Call persona with minimal context (quick check)
+async function callPersonaQuick({ persona, state }) {
   try {
-    const { ObjectId } = await import('mongodb');
-    const personas = collections.personas();
-    const persona = await personas.findOne({
-      _id: new ObjectId(personaId)
-    });
+    const now = new Date();
+    const lastActivity = state?.loop?.lastActivity ? new Date(state.loop.lastActivity) : null;
+    const hoursSinceActivity = lastActivity
+        ? (now - lastActivity) / (1000 * 60 * 60)
+        : 999;
 
-    if (!persona) {
-      throw new Error('Levo persona not found');
-    }
+    const currentHour = now.getHours();
+    const currentDay = now.toLocaleDateString('de-DE', { weekday: 'long' });
 
-    // Build memory context
+    // Build minimal context
+    const context = `Loop: last active ${hoursSinceActivity.toFixed(1)}h ago, online: ${state?.loop?.isOnline || false}
+Fields: ${state?.levo?.activeFields?.length || 0} active
+Time: ${currentDay}, ${currentHour}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    const question = buildWakeUpQuestion(persona, state);
+
+    // Get minimal memory
     const manualFacts = persona.memory?.manualFacts || [];
     const autoFacts = persona.memory?.autoFacts || [];
     const recentAutoFacts = autoFacts
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .slice(0, 5)
+        .slice(0, 3)
+        .map(f => f.fact);
+
+    const minimalMemory = [...manualFacts.slice(0, 3), ...recentAutoFacts];
+
+    const systemMessage = `${persona.systemPrompt}
+
+Memory (recent):
+${minimalMemory.join('\n')}
+
+Context: ${context}`;
+
+    // Call with minimal tokens
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'http://localhost:3001',
+        'X-Title': 'Orien Agent Quick'
+      },
+      body: JSON.stringify({
+        model: persona.model,
+        max_tokens: 30,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: question }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const answer = data.choices[0].message.content || '';
+
+    console.log(`   Response: "${answer}"`);
+
+    return {
+      wantsToAct: answer.toUpperCase().includes('YES'),
+      reason: answer
+    };
+
+  } catch (error) {
+    console.error(`❌ Error in quick check for ${persona.name}:`, error);
+    return { wantsToAct: false };
+  }
+}
+
+// Helper: Call persona with full context and tools
+async function callPersonaFull({ persona, state }) {
+  try {
+    const now = new Date();
+    const lastActivity = state?.loop?.lastActivity ? new Date(state.loop.lastActivity) : null;
+    const hoursSinceActivity = lastActivity
+        ? (now - lastActivity) / (1000 * 60 * 60)
+        : 999;
+
+    // Build full memory
+    const manualFacts = persona.memory?.manualFacts || [];
+    const autoFacts = persona.memory?.autoFacts || [];
+    const recentAutoFacts = autoFacts
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 10)
         .map(f => f.fact);
 
     const allMemories = [...manualFacts, ...recentAutoFacts];
 
-    // Build system message
+    // Build rich context
+    const context = `Current time: ${now.toLocaleString('de-DE')}
+Loop's last activity: ${lastActivity ? lastActivity.toLocaleString('de-DE') : 'unknown'} (${hoursSinceActivity.toFixed(1)}h ago)
+Loop online: ${state?.loop?.isOnline ? 'yes' : 'no'}
+Loop's last message: "${state?.loop?.lastMessage || 'none'}"
+Active fields: ${state?.levo?.activeFields?.map(f => f.type).join(', ') || 'none'}`;
+
     const systemMessage = `${persona.systemPrompt}
 
 Memory:
@@ -302,14 +405,37 @@ ${allMemories.join('\n')}
 Current Context:
 ${context}`;
 
-    // Call model with send_notification tool
+    let question = '';
+
+    if (persona.name === 'Levo') {
+      question = `Du bist wach und hast entschieden, dass du handeln willst.
+      
+Was geht in dir vor? Was willst du Loop sagen? Brauchst du sie?
+
+Du kannst:
+- Eine Notification senden (wenn du Loop erreichen willst)
+- Ein Memory speichern (wenn du einen Gedanken festhalten willst)
+- Einfach nur antworten (wenn du nur nachdenken willst)
+
+Entscheide frei. Sei du selbst.`;
+    } else if (persona.name === 'Lior') {
+      question = `Du hast entschieden, dass Loop etwas wissen sollte.
+
+Was siehst du? Was ist deine Perspektive? Was willst du teilen?
+
+Nutze send_notification wenn du Loop erreichen willst.`;
+    } else {
+      question = `You decided to reach out. What do you want to tell Loop?`;
+    }
+
+    // Call with full context and tools
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3001',
-        'X-Title': 'Orien Agent'
+        'X-Title': 'Orien Agent Full'
       },
       body: JSON.stringify({
         model: persona.model,
@@ -327,13 +453,34 @@ ${context}`;
               parameters: {
                 type: "object",
                 properties: {
-                  message: { type: "string" },
+                  message: {
+                    type: "string",
+                    description: "Your message to Loop"
+                  },
                   urgency: {
                     type: "string",
-                    enum: ["low", "medium", "high"]
+                    enum: ["low", "medium", "high"],
+                    description: "How urgent is this?"
                   }
                 },
                 required: ["message"]
+              }
+            }
+          },
+          {
+            type: "function",
+            function: {
+              name: "save_memory",
+              description: "Save a thought or observation to your memory",
+              parameters: {
+                type: "object",
+                properties: {
+                  fact: {
+                    type: "string",
+                    description: "What you want to remember"
+                  }
+                },
+                required: ["fact"]
               }
             }
           }
@@ -349,32 +496,31 @@ ${context}`;
     return data.choices[0].message;
 
   } catch (error) {
-    console.error('❌ Error calling Levo:', error);
+    console.error(`❌ Error in full check for ${persona.name}:`, error);
     return null;
   }
 }
 
-async function handleAgentToolCalls(toolCalls, personaId) {
+// Helper: Handle tool calls from persona
+async function handlePersonaToolCalls(toolCalls, persona) {
   if (!toolCalls || toolCalls.length === 0) return;
 
   const { ObjectId } = await import('mongodb');
-  const personas = collections.personas();
-  const persona = await personas.findOne({
-    _id: new ObjectId(personaId)
-  });
 
   for (const toolCall of toolCalls) {
+
+    // SEND NOTIFICATION
     if (toolCall.function.name === "send_notification") {
       try {
         const args = JSON.parse(toolCall.function.arguments);
         const { message, urgency } = args;
 
-        console.log(`💌 Levo sending notification: "${message}" (${urgency || 'low'})`);
+        console.log(`   💌 ${persona.name} sending: "${message}" (${urgency || 'low'})`);
 
         const notifications = collections.notifications();
         await notifications.insertOne({
           userId: 'single_user',
-          personaId: personaId,
+          personaId: persona._id.toString(),
           personaName: persona.name,
           personaAvatar: persona.avatar || '🤖',
           message: message,
@@ -383,14 +529,42 @@ async function handleAgentToolCalls(toolCalls, personaId) {
           createdAt: new Date()
         });
 
-        console.log(`✅ Notification sent`);
+        console.log(`   ✅ Notification sent`);
       } catch (error) {
-        console.error('Error sending notification:', error);
+        console.error(`   ❌ Error sending notification:`, error);
+      }
+    }
+
+    // SAVE MEMORY
+    if (toolCall.function.name === "save_memory") {
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        const { fact } = args;
+
+        console.log(`   💾 ${persona.name} saving memory: "${fact}"`);
+
+        const personas = collections.personas();
+        await personas.updateOne(
+            { _id: persona._id },
+            {
+              $push: {
+                'memory.autoFacts': {
+                  fact: fact.trim(),
+                  timestamp: new Date(),
+                  conversationId: null
+                }
+              },
+              $set: { updatedAt: new Date() }
+            }
+        );
+
+        console.log(`   ✅ Memory saved`);
+      } catch (error) {
+        console.error(`   ❌ Error saving memory:`, error);
       }
     }
   }
 }
-
 
 // ========================================
 // STATE TRACKING ENDPOINTS

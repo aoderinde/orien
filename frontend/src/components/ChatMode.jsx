@@ -258,6 +258,44 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         model: modelToUse
       };
 
+// Check if AI used tools
+      if (response.data.toolCalls && response.data.toolCalls.length > 0) {
+        for (const toolCall of response.data.toolCalls) {
+          // Show notification for save_memory
+          if (toolCall.function.name === 'save_memory') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const fact = args.fact;
+
+              // Add system message showing memory was saved
+              assistantMessage.push({
+                role: 'system',
+                content: `💾 Memory gespeichert: "${fact}"`,
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+
+          // Show notification for send_notification
+          if (toolCall.function.name === 'send_notification') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const message = args.message;
+
+              assistantMessage.push({
+                role: 'system',
+                content: `💌 Notification gesendet: "${message}"`,
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+        }
+      }
+
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);

@@ -10,6 +10,7 @@ function ChatMessage({ message }) {
           <span className="timestamp">
           {new Date(message.timestamp).toLocaleTimeString()}
         </span>
+
           {message.round && <span className="round">Round {message.round}</span>}
           {message.userPrompted && <span className="badge">User Prompt</span>}
           {message.model && (

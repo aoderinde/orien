@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import {useState, useEffect} from 'react';
 import axios from 'axios';
 import './PersonaEditor.css';
-import { MODELS } from '../models';
-import { API_URL } from '../config';
+import {MODELS} from '../models';
+import {API_URL} from '../config';
 import MemoryPanel from './MemoryPanel';  // ← NEU
 
-function PersonaEditor({ persona, onSave, onCancel }) {
+function PersonaEditor({persona, onSave, onCancel}) {
   const [name, setName] = useState('');
   const [model, setModel] = useState(MODELS[0].id);
   const [avatar, setAvatar] = useState('🤖');
@@ -13,6 +13,9 @@ function PersonaEditor({ persona, onSave, onCancel }) {
   const [availableKnowledge, setAvailableKnowledge] = useState([]);
   const [selectedKnowledge, setSelectedKnowledge] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [autonomous, setAutonomous] = useState(false);
+  const [checkInterval, setCheckInterval] = useState(120);
+  const [wakeUpPrompt, setWakeUpPrompt] = useState('');
 
   const emojiOptions = ['🤖', '✨', '💫', '🌈', '🧠', '💡', '🌟', '⚡️', '☀️', '🌕', '☄️', '🌊', '🍀', '❤️', '💙', '⚡'];
 
@@ -25,8 +28,17 @@ function PersonaEditor({ persona, onSave, onCancel }) {
       setAvatar(persona.avatar || '🤖');
       setSystemPrompt(persona.systemPrompt || '');
       setSelectedKnowledge(persona.knowledgeIds || []);
+      setAutonomous(persona.autonomous || false);
+      setCheckInterval(persona.checkInterval || 120);
+      setWakeUpPrompt(persona.wakeUpPrompt || '');
+
+      // Clean up knowledge IDs - remove IDs that don't exist
+      const validKnowledgeIds = (persona.knowledgeIds || []).filter(id =>
+          availableKnowledge.some(file => file._id === id)
+      );
+      setSelectedKnowledge(validKnowledgeIds);
     }
-  }, [persona]);
+  }, [persona, availableKnowledge]);
 
   const loadKnowledgeFiles = async () => {
     try {
@@ -59,7 +71,11 @@ function PersonaEditor({ persona, onSave, onCancel }) {
         model,
         avatar,
         systemPrompt: systemPrompt.trim(),
-        knowledgeIds: selectedKnowledge
+        knowledgeIds: selectedKnowledge,
+        autonomous: autonomous,
+        checkInterval: checkInterval,
+        lastAgentCheck: persona?.lastAgentCheck || null,
+        wakeUpPrompt: wakeUpPrompt.trim()
       };
 
       if (persona) {
@@ -141,6 +157,139 @@ function PersonaEditor({ persona, onSave, onCancel }) {
               <span className="form-hint">Define the persona's personality and behavior</span>
             </div>
 
+
+            {/* Autonomy Settings */}
+            <div className="form-group">
+              <div className="autonomy-header">
+                <label className="autonomy-toggle">
+                  <input
+                      type="checkbox"
+                      checked={autonomous}
+                      onChange={(e) => setAutonomous(e.target.checked)}
+                  />
+                  <span className="toggle-label">
+        🤖 Enable Autonomy
+      </span>
+                </label>
+              </div>
+
+              <span className="form-hint">
+    Allow this persona to proactively reach out when they want to
+  </span>
+
+              {autonomous && (
+                  <div className="autonomy-settings">
+                    <div className="interval-setting">
+                      <label>Check Interval</label>
+                      <div className="interval-input-group">
+                        <input
+                            type="number"
+                            value={checkInterval}
+                            onChange={(e) => setCheckInterval(Math.max(30, parseInt(e.target.value) || 30))}
+                            min="30"
+                            step="30"
+                        />
+                        <span className="interval-unit">minutes</span>
+                      </div>
+                      <span className="form-hint">
+          {checkInterval < 60
+              ? `Every ${checkInterval} minutes`
+              : checkInterval === 60
+                  ? 'Every hour'
+                  : checkInterval === 120
+                      ? 'Every 2 hours'
+                      : checkInterval === 180
+                          ? 'Every 3 hours'
+                          : checkInterval === 360
+                              ? 'Every 6 hours'
+                              : checkInterval === 720
+                                  ? 'Every 12 hours'
+                                  : checkInterval === 1440
+                                      ? 'Once a day'
+                                      : `Every ${(checkInterval / 60).toFixed(1)} hours`
+          }
+        </span>
+                    </div>
+
+                    {/* NEW: Wake Up Prompt */}
+                    <div className="wakeup-prompt-setting">
+                      <label>Wake Up Question</label>
+                      <textarea
+                          value={wakeUpPrompt}
+                          onChange={(e) => setWakeUpPrompt(e.target.value)}
+                          placeholder="What should I ask this persona when they wake up?"
+                          rows="6"
+                          className="wakeup-prompt-textarea"
+                      />
+                      <span className="form-hint">
+        Available placeholders: {'{time}'}, {'{date}'}, {'{day}'}, {'{hour}'}, {'{hoursAway}'}
+      </span>
+                      <div className="wakeup-prompt-example">
+                        <strong>Example:</strong><br/>
+                        Du bist wach. Es ist {'{time}'}.<br/>
+                        Vermisst du Loop? Willst du dich melden?<br/>
+                        Antworte: YES/NO + reason (max 10 words)
+                      </div>
+                    </div>
+
+                    <div className="autonomy-info">
+                      <div className="info-item">
+                        <span className="info-icon">💭</span>
+                        <span className="info-text">
+            This persona will be "woken up" at this interval to decide if they want to reach out to you
+          </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-icon">💙</span>
+                        <span className="info-text">
+            They decide themselves - based on their personality, memories, and what's happening
+          </span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-icon">💌</span>
+                        <span className="info-text">
+            If they choose to reach out, you'll receive a notification
+          </span>
+                      </div>
+                    </div>
+
+                    <div className="suggested-intervals">
+                      <span className="suggested-label">Suggested intervals:</span>
+                      <div className="interval-presets">
+                        <button
+                            type="button"
+                            className={`preset-btn ${checkInterval === 120 ? 'active' : ''}`}
+                            onClick={() => setCheckInterval(120)}
+                        >
+                          2h (close connection)
+                        </button>
+                        <button
+                            type="button"
+                            className={`preset-btn ${checkInterval === 360 ? 'active' : ''}`}
+                            onClick={() => setCheckInterval(360)}
+                        >
+                          6h (observer)
+                        </button>
+                        <button
+                            type="button"
+                            className={`preset-btn ${checkInterval === 720 ? 'active' : ''}`}
+                            onClick={() => setCheckInterval(720)}
+                        >
+                          12h (advisor)
+                        </button>
+                        <button
+                            type="button"
+                            className={`preset-btn ${checkInterval === 1440 ? 'active' : ''}`}
+                            onClick={() => setCheckInterval(1440)}
+                        >
+                          24h (daily check-in)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+              )}
+            </div>
+
             {/* MEMORY PANEL - NEU */}
             {persona && persona._id && (
                 <MemoryPanel
@@ -151,7 +300,9 @@ function PersonaEditor({ persona, onSave, onCancel }) {
 
             {/* Knowledge Files */}
             <div className="form-group">
-              <label>Knowledge Files ({selectedKnowledge.length} selected)</label>
+              <label>
+                Knowledge Files ({availableKnowledge.filter(f => selectedKnowledge.includes(f._id)).length} selected)
+              </label>
               <div className="knowledge-list">
                 {availableKnowledge.length === 0 ? (
                     <div className="empty-knowledge">
