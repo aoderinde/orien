@@ -23,12 +23,24 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Erlaube Requests OHNE Origin (z.B. curl, GitHub Actions)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Erlaube whitelisted Origins
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
+  credentials: true
+}));
+
+app.use(cors({
+  origin: '*',  // Erlaubt alle Origins (für jetzt ok, da Backend-to-Backend)
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   credentials: true
 }));
 
