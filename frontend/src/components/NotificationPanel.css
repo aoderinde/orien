@@ -14,8 +14,12 @@
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .notification-panel {
@@ -158,6 +162,7 @@
     transition: all 0.2s;
     cursor: pointer;
     position: relative;
+    max-height: none;
 }
 
 .notification-item:hover {
@@ -230,10 +235,12 @@
 }
 
 .notification-message {
-    color: #4a5568;
-    font-size: 0.9rem;
-    line-height: 1.5;
+    max-height: 500px; /* Instead of 200px or whatever it is now */
+    overflow-y: auto;
+    white-space: pre-wrap;
     word-wrap: break-word;
+    line-height: 1.6;
+    padding: 10px;
 }
 
 .btn-delete {

@@ -438,7 +438,8 @@ function buildHermesTools() {
         "urgency": {
           "type": "string",
           "enum": ["low", "medium", "high"],
-          "description": "How urgent is this?"
+          "description": "How urgent is this?",
+          "maxLength": 1000,
         }
       },
       "required": ["message"]
@@ -459,7 +460,14 @@ function buildHermesTools() {
     }
   }
 ]
-</tools>`;
+</tools>
+
+CRITICAL: When using tools, write ONLY:
+<tool_call>
+{"name": "tool_name", "arguments": {...}}
+</tool_call>
+
+Then STOP. No reflections or explanations after </tool_call>.`;
 }
 
 // Helper: Build tool definitions for standard format
@@ -475,7 +483,8 @@ function buildStandardTools() {
           properties: {
             message: {
               type: "string",
-              description: "Your message to Loop"
+              description: "Your message to Loop",
+              maxLength: 1000,
             },
             urgency: {
               type: "string",
