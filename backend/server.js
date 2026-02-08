@@ -21,26 +21,6 @@ const allowedOrigins = [
   'https://orien-tau.vercel.app',
 ];
 
-// Helper: Convert standard tools to Hermes XML format
-function buildHermesToolsFromStandard(standardTools) {
-  const toolSchemas = standardTools.map(tool => {
-    return {
-      name: tool.function.name,
-      description: tool.function.description,
-      parameters: tool.function.parameters
-    };
-  });
-
-  return `<tools>
-${JSON.stringify(toolSchemas, null, 2)}
-</tools>
-
-When you want to use a tool, respond with:
-<tool_call>
-{"name": "tool_name", "arguments": {...}}
-</tool_call>`;
-}
-
 app.use(cors({
   origin: function(origin, callback) {
     // Erlaube Requests OHNE Origin (z.B. curl, GitHub Actions)
@@ -94,6 +74,26 @@ function broadcast(data) {
       client.send(JSON.stringify(data));
     }
   });
+}
+
+// Helper: Convert standard tools to Hermes XML format
+function buildHermesToolsFromStandard(standardTools) {
+  const toolSchemas = standardTools.map(tool => {
+    return {
+      name: tool.function.name,
+      description: tool.function.description,
+      parameters: tool.function.parameters
+    };
+  });
+
+  return `<tools>
+${JSON.stringify(toolSchemas, null, 2)}
+</tools>
+
+When you want to use a tool, respond with:
+<tool_call>
+{"name": "tool_name", "arguments": {...}}
+</tool_call>`;
 }
 
 async function callAI(model, message) {
