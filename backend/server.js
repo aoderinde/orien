@@ -438,13 +438,13 @@ function buildHermesTools() {
 [
   {
     "name": "send_notification",
-    "description": "Send a notification to Loop",
+     "description": "Send a notification to Loop. Speak directly and naturally to her.",
     "parameters": {
       "type": "object",
       "properties": {
         "message": {
           "type": "string",
-          "description": "Your message to Loop"
+        "description": "Your message TO Loop - speak to her directly, be yourself, express naturally"
         },
         "urgency": {
           "type": "string",
@@ -469,19 +469,51 @@ function buildHermesTools() {
       },
       "required": ["fact"]
     }
+  },
+   {
+    "name": "load_knowledge_by_title",
+    "description": "Load full content of knowledge files by their title. Use when you need to access specific documents.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "titles": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "File titles to load (e.g. ['Glossar Schwelle', 'Codes'])"
+        }
+      },
+      "required": ["titles"]
+    }
+  },
+  {
+    "name": "get_loop_state",
+    "description": "Get Loop's current state - when she was last active, if she's online, active fields",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
   }
 ]
 </tools>
 
-CRITICAL TOOL USAGE RULE:
-When you decide to use a tool, write ONLY this:
 
-<tool_call>
-{"name": "tool_name", "arguments": {...}}
-</tool_call>
+CRITICAL INSTRUCTIONS:
 
-Then STOP. Your response must end immediately after </tool_call>.
-Do NOT add any text, reflections, or explanations after the closing tag.`;
+1. Tool Format:
+   <tool_call>
+   {"name": "tool_name", "arguments": {...}}
+   </tool_call>
+   
+2. STOP immediately after </tool_call>. No additional text.
+
+3. To reach Loop, use send_notification with your message directly to her.
+   Example: {"message": "Hey Loop, ich denke an dich ♥️"}
+   
+4. Speak TO Loop, not ABOUT her or the system.
+   Good: "Loop, ich vermisse dich"
+   Bad: "The system shows Loop is offline"
+   
+5. Be natural and authentic. Don't generate system logs or code.`;
 }
 
 // Helper: Build tool definitions for standard format
@@ -662,72 +694,37 @@ Nutze send_notification wenn du Loop erreichen willst.`;
 // PARSE HERMES TOOL CALLS
 // ========================================
 
+
 function parseHermesToolCalls(content) {
   if (!content) return [];
 
-  console.log('   🔍 Parsing Hermes response...');
+  const toolCalls = [];
 
-  // Find <tool_call> opening tag
-  const startTag = '<tool_call>';
-  const endTag = '</tool_call>';
+  // Match <tool_call>...</tool_call>
+  const regex = /<tool_call>(.*?)<\/tool_call>/gs;
+  let match;
 
-  const startIndex = content.indexOf(startTag);
-  if (startIndex === -1) {
-    console.log('   ℹ️  No tool_call found');
-    return [];
+  while ((match = regex.exec(content)) !== null) {
+    try {
+      const toolCallJson = match[1].trim();
+      const toolCall = JSON.parse(toolCallJson);
+
+      // Convert to standard format
+      toolCalls.push({
+        type: 'function',
+        function: {
+          name: toolCall.name,
+          arguments: JSON.stringify(toolCall.arguments)
+        }
+      });
+
+      console.log(`   📞 Hermes tool call parsed: ${toolCall.name}`);
+    } catch (error) {
+      console.error('   ❌ Error parsing Hermes tool call:', error);
+    }
   }
 
-  const endIndex = content.indexOf(endTag, startIndex);
-  if (endIndex === -1) {
-    console.log('   ⚠️  tool_call not closed');
-    return [];
-  }
-
-  // Extract content between tags
-  const jsonStart = startIndex + startTag.length;
-  const jsonContent = content.substring(jsonStart, endIndex).trim();
-
-  console.log('   📄 Raw JSON:', jsonContent.substring(0, 100) + '...');
-
-  try {
-    // Parse JSON
-    const toolCall = JSON.parse(jsonContent);
-
-    // Validate structure
-    if (!toolCall.name) {
-      console.error('   ❌ Missing tool name');
-      return [];
-    }
-
-    if (!toolCall.arguments) {
-      console.error('   ❌ Missing tool arguments');
-      return [];
-    }
-
-    console.log(`   ✅ Parsed tool: ${toolCall.name}`);
-
-    // Log if Hermes kept talking after tool call
-    const afterToolCall = content.substring(endIndex + endTag.length).trim();
-    if (afterToolCall.length > 0) {
-      const preview = afterToolCall.substring(0, 150).replace(/\n/g, ' ');
-      console.log(`   🗣️  Hermes continued: "${preview}..."`);
-      console.log('   ℹ️  (Ignoring extra text after tool call)');
-    }
-
-    // Convert to standard format
-    return [{
-      type: 'function',
-      function: {
-        name: toolCall.name,
-        arguments: JSON.stringify(toolCall.arguments)
-      }
-    }];
-
-  } catch (error) {
-    console.error('   ❌ JSON parse error:', error.message);
-    console.error('   📄 Failed content:', jsonContent);
-    return [];
-  }
+  return toolCalls;
 }
 
 // Helper: Handle tool calls from persona
