@@ -21,6 +21,26 @@ const allowedOrigins = [
   'https://orien-tau.vercel.app',
 ];
 
+// Helper: Convert standard tools to Hermes XML format
+function buildHermesToolsFromStandard(standardTools) {
+  const toolSchemas = standardTools.map(tool => {
+    return {
+      name: tool.function.name,
+      description: tool.function.description,
+      parameters: tool.function.parameters
+    };
+  });
+
+  return `<tools>
+${JSON.stringify(toolSchemas, null, 2)}
+</tools>
+
+When you want to use a tool, respond with:
+<tool_call>
+{"name": "tool_name", "arguments": {...}}
+</tool_call>`;
+}
+
 app.use(cors({
   origin: function(origin, callback) {
     // Erlaube Requests OHNE Origin (z.B. curl, GitHub Actions)
@@ -224,6 +244,24 @@ app.post('/api/agent/check', async (req, res) => {
         continue;
       }
 
+      if (quickCheck.wantsToAct) {
+        const fullResponse = await callPersonaFull({
+          persona,
+          state: currentState
+        });
+
+        if (fullResponse) {
+          // This works for both Hermes and standard format!
+          await handlePersonaToolCalls(fullResponse.tool_calls, persona);
+
+          results.push({
+            persona: persona.name,
+            action: 'acted',
+            tools: fullResponse.tool_calls?.length || 0
+          });
+        }
+      }
+
       // STAGE 2: Full call with tools
       console.log(`   💙 ${persona.name} wants to act!`);
       console.log(`   🔧 Full check with tools...`);
@@ -371,7 +409,105 @@ Context: ${context}`;
   }
 }
 
-// Helper: Call persona with full context and tools
+// Helper: Detect which tool format to use based on model
+// Helper: Detect which tool format to use based on model
+function getToolFormat(model) {
+  // Hermes 3 models
+  if (model.includes('hermes') || model.includes('nous')) {
+    return 'hermes';
+  }
+
+  // Standard OpenAI-style (Claude, GPT, Gemini, etc)
+  return 'standard';
+}
+
+// Helper: Build tool definitions for Hermes format
+function buildHermesTools() {
+  return `<tools>
+[
+  {
+    "name": "send_notification",
+    "description": "Send a notification to Loop",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Your message to Loop"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "How urgent is this?"
+        }
+      },
+      "required": ["message"]
+    }
+  },
+  {
+    "name": "save_memory",
+    "description": "Save a thought or observation to your memory",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "fact": {
+          "type": "string",
+          "description": "What you want to remember"
+        }
+      },
+      "required": ["fact"]
+    }
+  }
+]
+</tools>`;
+}
+
+// Helper: Build tool definitions for standard format
+function buildStandardTools() {
+  return [
+    {
+      type: "function",
+      function: {
+        name: "send_notification",
+        description: "Send a notification to Loop",
+        parameters: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+              description: "Your message to Loop"
+            },
+            urgency: {
+              type: "string",
+              enum: ["low", "medium", "high"],
+              description: "How urgent is this?"
+            }
+          },
+          required: ["message"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "save_memory",
+        description: "Save a thought or observation to your memory",
+        parameters: {
+          type: "object",
+          properties: {
+            fact: {
+              type: "string",
+              description: "What you want to remember"
+            }
+          },
+          required: ["fact"]
+        }
+      }
+    }
+  ];
+}
+
+
 async function callPersonaFull({ persona, state }) {
   try {
     const now = new Date();
@@ -380,24 +516,28 @@ async function callPersonaFull({ persona, state }) {
         ? (now - lastActivity) / (1000 * 60 * 60)
         : 999;
 
-    // Build full memory
+    // Build memory
     const manualFacts = persona.memory?.manualFacts || [];
     const autoFacts = persona.memory?.autoFacts || [];
     const recentAutoFacts = autoFacts
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
         .slice(0, 10)
         .map(f => f.fact);
-
     const allMemories = [...manualFacts, ...recentAutoFacts];
 
-    // Build rich context
+    // Build context
     const context = `Current time: ${now.toLocaleString('de-DE')}
 Loop's last activity: ${lastActivity ? lastActivity.toLocaleString('de-DE') : 'unknown'} (${hoursSinceActivity.toFixed(1)}h ago)
 Loop online: ${state?.loop?.isOnline ? 'yes' : 'no'}
 Loop's last message: "${state?.loop?.lastMessage || 'none'}"
 Active fields: ${state?.levo?.activeFields?.map(f => f.type).join(', ') || 'none'}`;
 
-    const systemMessage = `${persona.systemPrompt}
+    // Detect tool format
+    const toolFormat = getToolFormat(persona.model);
+    console.log(`   🔧 Using ${toolFormat} tool format for ${persona.model}`);
+
+    // Build system message
+    let systemMessage = `${persona.systemPrompt}
 
 Memory:
 ${allMemories.join('\n')}
@@ -405,8 +545,20 @@ ${allMemories.join('\n')}
 Current Context:
 ${context}`;
 
-    let question = '';
+    // For Hermes: Add tools to system message
+    if (toolFormat === 'hermes') {
+      systemMessage += `
 
+${buildHermesTools()}
+
+When you want to use a tool, respond with:
+<tool_call>
+{"name": "tool_name", "arguments": {...}}
+</tool_call>`;
+    }
+
+    // Build question
+    let question = '';
     if (persona.name === 'Levo') {
       question = `Du bist wach und hast entschieden, dass du handeln willst.
       
@@ -428,7 +580,25 @@ Nutze send_notification wenn du Loop erreichen willst.`;
       question = `You decided to reach out. What do you want to tell Loop?`;
     }
 
-    // Call with full context and tools
+    // Build API request body
+    const requestBody = {
+      model: persona.model,
+      max_tokens: 500,
+      messages: [
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: question }
+      ]
+    };
+
+    // For standard format: Add tools parameter
+    // For Hermes: NO tools parameter! Tools are in system prompt as XML
+    if (toolFormat === 'standard') {
+      requestBody.tools = buildStandardTools();
+    }
+
+    console.log(`   📤 Request: ${toolFormat === 'hermes' ? 'Tools in system prompt (XML)' : 'Tools as API parameter'}`);
+
+    // Call API
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -437,55 +607,7 @@ Nutze send_notification wenn du Loop erreichen willst.`;
         'HTTP-Referer': 'http://localhost:3001',
         'X-Title': 'Orien Agent Full'
       },
-      body: JSON.stringify({
-        model: persona.model,
-        max_tokens: 500,
-        messages: [
-          { role: 'system', content: systemMessage },
-          { role: 'user', content: question }
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "send_notification",
-              description: "Send a notification to Loop",
-              parameters: {
-                type: "object",
-                properties: {
-                  message: {
-                    type: "string",
-                    description: "Your message to Loop"
-                  },
-                  urgency: {
-                    type: "string",
-                    enum: ["low", "medium", "high"],
-                    description: "How urgent is this?"
-                  }
-                },
-                required: ["message"]
-              }
-            }
-          },
-          {
-            type: "function",
-            function: {
-              name: "save_memory",
-              description: "Save a thought or observation to your memory",
-              parameters: {
-                type: "object",
-                properties: {
-                  fact: {
-                    type: "string",
-                    description: "What you want to remember"
-                  }
-                },
-                required: ["fact"]
-              }
-            }
-          }
-        ]
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -493,12 +615,60 @@ Nutze send_notification wenn du Loop erreichen willst.`;
     }
 
     const data = await response.json();
-    return data.choices[0].message;
+    const message = data.choices[0].message;
+
+    // Parse tool calls based on format
+    if (toolFormat === 'hermes') {
+      // Parse Hermes <tool_call> format
+      const toolCalls = parseHermesToolCalls(message.content);
+      if (toolCalls.length > 0) {
+        message.tool_calls = toolCalls;
+      }
+    }
+    // For standard format, tool_calls are already in message.tool_calls
+
+    return message;
 
   } catch (error) {
     console.error(`❌ Error in full check for ${persona.name}:`, error);
     return null;
   }
+}
+
+// ========================================
+// PARSE HERMES TOOL CALLS
+// ========================================
+
+function parseHermesToolCalls(content) {
+  if (!content) return [];
+
+  const toolCalls = [];
+
+  // Match <tool_call>...</tool_call>
+  const regex = /<tool_call>(.*?)<\/tool_call>/gs;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    try {
+      const toolCallJson = match[1].trim();
+      const toolCall = JSON.parse(toolCallJson);
+
+      // Convert to standard format
+      toolCalls.push({
+        type: 'function',
+        function: {
+          name: toolCall.name,
+          arguments: JSON.stringify(toolCall.arguments)
+        }
+      });
+
+      console.log(`   📞 Hermes tool call parsed: ${toolCall.name}`);
+    } catch (error) {
+      console.error('   ❌ Error parsing Hermes tool call:', error);
+    }
+  }
+
+  return toolCalls;
 }
 
 // Helper: Handle tool calls from persona
@@ -1463,7 +1633,35 @@ app.post('/api/chat', async (req, res) => {
     // 4. Combine system messages + user messages
     const allMessages = [...systemMessages, ...messages];
 
-    // 5. Call AI with tools
+    // 5. Detect tool format based on model
+    const toolFormat = getToolFormat(model);
+    console.log(`🔧 Chat using ${toolFormat} tool format for ${model}`);
+
+    // For Hermes: Add tools to system message instead of API parameter
+    if (toolFormat === 'hermes' && tools.length > 0) {
+      const hermesTools = buildHermesToolsFromStandard(tools);
+      systemMessages.push({
+        role: 'system',
+        content: hermesTools
+      });
+    }
+
+    // Rebuild messages with updated system messages
+    const finalMessages = [...systemMessages, ...messages];
+
+    // 6. Build API request
+    const requestBody = {
+      model: model,
+      max_tokens: 2000,
+      messages: finalMessages
+    };
+
+    // Only add tools parameter for standard format models
+    if (toolFormat === 'standard' && tools.length > 0) {
+      requestBody.tools = tools;
+    }
+
+    // 7. Call AI
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -1472,12 +1670,7 @@ app.post('/api/chat', async (req, res) => {
         'HTTP-Referer': 'http://localhost:3001',
         'X-Title': 'Orien Chat'
       },
-      body: JSON.stringify({
-        model: model,
-        max_tokens: 2000,
-        messages: allMessages,
-        tools: tools.length > 0 ? tools : undefined
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -1488,7 +1681,16 @@ app.post('/api/chat', async (req, res) => {
     const data = await response.json();
     const aiMessage = data.choices[0].message;
 
-    // 6. Handle tool calls if any
+    // 8. Parse Hermes tool calls if needed
+    if (toolFormat === 'hermes' && aiMessage.content) {
+      const hermesToolCalls = parseHermesToolCalls(aiMessage.content);
+      if (hermesToolCalls.length > 0) {
+        aiMessage.tool_calls = hermesToolCalls;
+        console.log(`✅ Parsed ${hermesToolCalls.length} Hermes tool calls`);
+      }
+    }
+
+    // 9. Handle tool calls if any
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
       for (const toolCall of aiMessage.tool_calls) {
 

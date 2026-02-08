@@ -28,11 +28,27 @@ function App() {
 
   const [showPersonaEditor, setShowPersonaEditor] = useState(false);
   const [editingPersona, setEditingPersona] = useState(null);
+  const [personas, setPersonas] = useState([]);
   const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
 
   // NEW: Export handler reference
   const exportChatHandler = useRef(null);
+
+  // Load personas function
+  const loadPersonas = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/personas`);
+      setPersonas(response.data);
+    } catch (error) {
+      console.error('Error loading personas:', error);
+    }
+  };
+
+  // Load on mount
+  useEffect(() => {
+    loadPersonas();
+  }, []);
 
   const handleModeChange = (newMode) => {
     setMode(newMode);
@@ -62,7 +78,8 @@ function App() {
   };
 
   const handleEditPersona = (persona) => {
-    setEditingPersona(persona);
+    const currentPersona = personas.find(p => p._id === persona._id);
+    setEditingPersona(currentPersona);
     setShowPersonaEditor(true);
   };
 
@@ -70,9 +87,13 @@ function App() {
     setSelectedPersonaForChat(persona._id);
     setMode('chat');
   };
-  const handleSavePersona = () => {
+
+  const handleSavePersona = async () => {
     setShowPersonaEditor(false);
     setEditingPersona(null);
+    // ← ADD THIS: Reload personas
+
+    await loadPersonas();
   };
 
   const handleCancelPersona = () => {

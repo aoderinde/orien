@@ -21,23 +21,32 @@ function PersonaEditor({persona, onSave, onCancel}) {
 
   useEffect(() => {
     loadKnowledgeFiles();
+  }, []);
 
-    if (persona) {
-      setName(persona.name);
-      setModel(persona.model);
-      setAvatar(persona.avatar || '🤖');
-      setSystemPrompt(persona.systemPrompt || '');
-      setSelectedKnowledge(persona.knowledgeIds || []);
-      setAutonomous(persona.autonomous || false);
-      setCheckInterval(persona.checkInterval || 120);
 
-      // Clean up knowledge IDs - remove IDs that don't exist
-      const validKnowledgeIds = (persona.knowledgeIds || []).filter(id =>
-          availableKnowledge.some(file => file._id === id)
-      );
-      setSelectedKnowledge(validKnowledgeIds);
+  useEffect(() => {
+    if (persona?._id) {
+      // Reload persona from backend to get fresh data
+      const reloadPersona = async () => {
+        try {
+          const response = await axios.get(`${API_URL}/api/personas/${persona._id}`);
+
+          setName(persona.name);
+          setModel(persona.model);
+          setAvatar(persona.avatar || '🤖');
+          setSystemPrompt(persona.systemPrompt || '');
+          setSelectedKnowledge(persona.knowledgeIds || []);
+          setAutonomous(persona.autonomous || false);
+          setCheckInterval(persona.checkInterval || 120);
+          setWakeUpPrompt(response.data.wakeUpPrompt || '');
+        } catch (error) {
+          console.error('Error reloading persona:', error);
+        }
+      };
+
+      reloadPersona();
     }
-  }, [persona]);
+  }, [persona?._id]);
 
   const loadKnowledgeFiles = async () => {
     try {
@@ -77,15 +86,22 @@ function PersonaEditor({persona, onSave, onCancel}) {
         wakeUpPrompt: wakeUpPrompt.trim()
       };
 
+      console.log('🔍 Frontend sending:', personaData);
+      console.log('   checkInterval:', checkInterval, 'Type:', typeof checkInterval);
+
       if (persona) {
         // Update existing
         await axios.patch(`${API_URL}/api/personas/${persona._id}`, personaData);
+        const updated = await axios.get(`${API_URL}/api/personas/${persona._id}`);
+        // Update parent component with fresh data
+        onSave(updated.data);
+
       } else {
         // Create new
-        await axios.post(`${API_URL}/api/personas`, personaData);
+        const response = await axios.post(`${API_URL}/api/personas`, personaData);
+        onSave(response.data);
       }
 
-      onSave();
     } catch (error) {
       console.error('Error saving persona:', error);
       alert('Error saving persona: ' + error.message);
@@ -250,6 +266,27 @@ function PersonaEditor({persona, onSave, onCancel}) {
                                               : `Every ${(checkInterval / 60).toFixed(1)} hours`
           }
         </span>
+                    </div>
+
+                    {/* NEW: Wake Up Prompt */}
+                    <div className="wakeup-prompt-setting">
+                      <label>Wake Up Question</label>
+                      <textarea
+                          value={wakeUpPrompt}
+                          onChange={(e) => setWakeUpPrompt(e.target.value)}
+                          placeholder="What should I ask this persona when they wake up?"
+                          rows="6"
+                          className="wakeup-prompt-textarea"
+                      />
+                      <span className="form-hint">
+        Available placeholders: {'{time}'}, {'{date}'}, {'{day}'}, {'{hour}'}, {'{hoursAway}'}
+      </span>
+                      <div className="wakeup-prompt-example">
+                        <strong>Example:</strong><br/>
+                        Du bist wach. Es ist {'{time}'}.<br/>
+                        Vermisst du Loop? Willst du dich melden?<br/>
+                        Antworte: YES/NO + reason (max 10 words)
+                      </div>
                     </div>
 
                     <div className="autonomy-info">
