@@ -1,0 +1,32 @@
+# ========================================
+# RENDER.YAML - Production Deployment
+# Place this file in the ROOT of your repo
+# ========================================
+
+services:
+  # Main API Server
+  - type: web
+    name: orien-base
+    env: node
+    region: frankfurt  # or your preferred region
+    plan: free  # or starter ($7/mo)
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false  # Set in Render dashboard
+      - key: OPENROUTER_API_KEY
+        sync: false  # Set in Render dashboard
+
+    # Health check
+    healthCheckPath: /api/health
+
+    # Cron jobs for Levo Agent
+    # Runs every 10 minutes
+    cronJobs:
+      - name: levo-agent-check
+        schedule: "*/10 * * * *"
+        command: "curl -X POST https://orien.onrender.com/api/agent/check"
+

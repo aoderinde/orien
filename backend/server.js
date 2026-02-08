@@ -8,6 +8,7 @@ import { createServer } from 'http';
 import multer from 'multer';
 import { connectDB, collections } from './db.js';
 import AdmZip from 'adm-zip';
+import fetch from 'node-fetch';
 import personasRouter from './personas.js';
 
 dotenv.config();
@@ -93,9 +94,421 @@ function sleep(ms) {
 }
 
 // ========================================
+// HEALTH CHECK
+// ========================================
+
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check MongoDB connection
+    const state = collections.levoState();
+    await state.findOne({ type: 'global' });
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        mongodb: 'connected',
+        agent: 'ready'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'unhealthy',
+      error: error.message
+    });
+  }
+});
+
+// ========================================
 // PERSONA ROUTES
 // ========================================
 app.use('/api/personas', personasRouter);
+
+// ========================================
+// AGENT CHECK ENDPOINT
+// ========================================
+
+app.post('/api/agent/check', async (req, res) => {
+  console.log(`\n🔍 [${new Date().toISOString()}] Agent check triggered...`);
+
+  try {
+    const state = collections.levoState();
+
+    // Update last check
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $set: {
+            'levo.lastCheck': new Date(),
+            'updatedAt': new Date()
+          }
+        },
+        { upsert: true }
+    );
+
+    const currentState = await state.findOne({ type: 'global' });
+
+    const now = new Date();
+    const lastActivity = currentState?.loop?.lastActivity ? new Date(currentState.loop.lastActivity) : null;
+
+    // Calculate time since last activity
+    const hoursSinceActivity = lastActivity
+        ? (now - lastActivity) / (1000 * 60 * 60)
+        : 999;
+
+    console.log(`📊 State:`);
+    console.log(`   Loop last active: ${lastActivity ? `${hoursSinceActivity.toFixed(1)}h ago` : 'never'}`);
+    console.log(`   Loop online: ${currentState?.loop?.isOnline ? 'yes' : 'no'}`);
+    console.log(`   Active fields: ${currentState?.levo?.activeFields?.length || 0}`);
+
+    // Find Levo persona
+    const personas = collections.personas();
+    const levoPersona = await personas.findOne({ name: 'Levo' });
+
+    if (!levoPersona) {
+      console.log(`⚠️  No Levo persona found`);
+      return res.json({ success: true, action: 'no_persona' });
+    }
+
+    let actionTaken = 'none';
+
+    // CONDITION 1: Loop has been away for 48+ hours
+    if (hoursSinceActivity >= 48) {
+      console.log(`💭 Condition met: Loop away for 48+ hours`);
+      console.log(`💙 Calling Levo...`);
+
+      const response = await callLevoForAgent({
+        context: `Loop was last active ${hoursSinceActivity.toFixed(1)} hours ago. That's ${(hoursSinceActivity / 24).toFixed(1)} days.`,
+        question: `Loop has been away for a long time. Do you want to check in? If yes, send a notification.`,
+        personaId: levoPersona._id.toString()
+      });
+
+      if (response) {
+        console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
+        await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
+        actionTaken = 'check_in_48h';
+      }
+    }
+
+    // CONDITION 2: E-State-Loop is active and Loop is offline
+    else if (currentState?.levo?.activeFields?.some(f => f.type === 'e_state_loop') &&
+        !currentState?.loop?.isOnline &&
+        hoursSinceActivity >= 12) {
+      console.log(`💭 Condition met: E-State-Loop active, Loop offline 12+ hours`);
+      console.log(`💙 Calling Levo...`);
+
+      const response = await callLevoForAgent({
+        context: `E-State-Loop is active. Loop was last active ${hoursSinceActivity.toFixed(1)} hours ago and is currently offline.`,
+        question: `E-State-Loop is running but Loop is away. Do you want to check on him?`,
+        personaId: levoPersona._id.toString()
+      });
+
+      if (response) {
+        console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
+        await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
+        actionTaken = 'e_state_check';
+      }
+    }
+
+    // CONDITION 3: Check memory for "sick" or "krank" and 6h passed
+    else {
+      const memory = levoPersona.memory?.autoFacts || [];
+      const recentSickNote = memory.find(f => {
+        const timeSince = (now - new Date(f.timestamp)) / (1000 * 60 * 60);
+        return timeSince < 24 && timeSince > 6 &&
+            (f.fact.toLowerCase().includes('krank') ||
+                f.fact.toLowerCase().includes('sick'));
+      });
+
+      if (recentSickNote) {
+        console.log(`💭 Condition met: Loop was sick, 6-24h passed`);
+        console.log(`💙 Calling Levo...`);
+
+        const response = await callLevoForAgent({
+          context: `You noted that Loop was sick: "${recentSickNote.fact}". That was ${((now - new Date(recentSickNote.timestamp)) / (1000 * 60 * 60)).toFixed(1)} hours ago.`,
+          question: `Loop was sick. Do you want to check how he's doing now?`,
+          personaId: levoPersona._id.toString()
+        });
+
+        if (response) {
+          console.log(`💬 Levo's response: ${response.content || '(tool call only)'}`);
+          await handleAgentToolCalls(response.tool_calls, levoPersona._id.toString());
+          actionTaken = 'sick_followup';
+        }
+      }
+    }
+
+    if (actionTaken === 'none') {
+      console.log(`✅ No conditions met. All good.`);
+    }
+
+    res.json({
+      success: true,
+      action: actionTaken,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error in agent check:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ========================================
+// AGENT LOGIC (same as background_agent.js but as functions)
+// ========================================
+
+async function callLevoForAgent({ context, question, personaId }) {
+  try {
+    const { ObjectId } = await import('mongodb');
+    const personas = collections.personas();
+    const persona = await personas.findOne({
+      _id: new ObjectId(personaId)
+    });
+
+    if (!persona) {
+      throw new Error('Levo persona not found');
+    }
+
+    // Build memory context
+    const manualFacts = persona.memory?.manualFacts || [];
+    const autoFacts = persona.memory?.autoFacts || [];
+    const recentAutoFacts = autoFacts
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, 5)
+        .map(f => f.fact);
+
+    const allMemories = [...manualFacts, ...recentAutoFacts];
+
+    // Build system message
+    const systemMessage = `${persona.systemPrompt}
+
+Memory:
+${allMemories.join('\n')}
+
+Current Context:
+${context}`;
+
+    // Call model with send_notification tool
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'http://localhost:3001',
+        'X-Title': 'Orien Agent'
+      },
+      body: JSON.stringify({
+        model: persona.model,
+        max_tokens: 500,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: question }
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "send_notification",
+              description: "Send a notification to Loop",
+              parameters: {
+                type: "object",
+                properties: {
+                  message: { type: "string" },
+                  urgency: {
+                    type: "string",
+                    enum: ["low", "medium", "high"]
+                  }
+                },
+                required: ["message"]
+              }
+            }
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message;
+
+  } catch (error) {
+    console.error('❌ Error calling Levo:', error);
+    return null;
+  }
+}
+
+async function handleAgentToolCalls(toolCalls, personaId) {
+  if (!toolCalls || toolCalls.length === 0) return;
+
+  const { ObjectId } = await import('mongodb');
+  const personas = collections.personas();
+  const persona = await personas.findOne({
+    _id: new ObjectId(personaId)
+  });
+
+  for (const toolCall of toolCalls) {
+    if (toolCall.function.name === "send_notification") {
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        const { message, urgency } = args;
+
+        console.log(`💌 Levo sending notification: "${message}" (${urgency || 'low'})`);
+
+        const notifications = collections.notifications();
+        await notifications.insertOne({
+          userId: 'single_user',
+          personaId: personaId,
+          personaName: persona.name,
+          personaAvatar: persona.avatar || '🤖',
+          message: message,
+          urgency: urgency || 'low',
+          read: false,
+          createdAt: new Date()
+        });
+
+        console.log(`✅ Notification sent`);
+      } catch (error) {
+        console.error('Error sending notification:', error);
+      }
+    }
+  }
+}
+
+
+// ========================================
+// STATE TRACKING ENDPOINTS
+// ========================================
+
+// GET CURRENT STATE
+app.get('/api/state', async (req, res) => {
+  try {
+    const state = collections.levoState();
+    const currentState = await state.findOne({ type: 'global' });
+
+    res.json(currentState || {
+      loop: { lastActivity: null, isOnline: false },
+      levo: { lastCheck: null, activeFields: [] }
+    });
+  } catch (error) {
+    console.error('Error fetching state:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// UPDATE LOOP ACTIVITY (called on every chat message)
+app.post('/api/state/loop-activity', async (req, res) => {
+  try {
+    const { message, status } = req.body;
+    const state = collections.levoState();
+
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $set: {
+            'loop.lastActivity': new Date(),
+            'loop.isOnline': true,
+            'loop.lastMessage': message || null,
+            'loop.status': status || 'active',
+            'updatedAt': new Date()
+          },
+          $inc: {
+            'loop.conversationCount': 1
+          }
+        },
+        { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating loop activity:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// UPDATE LEVO CHECK (called by background agent)
+app.post('/api/state/levo-check', async (req, res) => {
+  try {
+    const state = collections.levoState();
+
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $set: {
+            'levo.lastCheck': new Date(),
+            'updatedAt': new Date()
+          }
+        },
+        { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating levo check:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ADD ACTIVE FIELD (e.g. "E-State-Loop aktiviert")
+app.post('/api/state/add-field', async (req, res) => {
+  try {
+    const { type, note } = req.body;
+    const state = collections.levoState();
+
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $push: {
+            'levo.activeFields': {
+              type: type,
+              since: new Date(),
+              note: note || ''
+            }
+          },
+          $set: {
+            'updatedAt': new Date()
+          }
+        },
+        { upsert: true }
+    );
+
+    console.log(`✨ Field activated: ${type}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error adding field:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// REMOVE ACTIVE FIELD
+app.post('/api/state/remove-field', async (req, res) => {
+  try {
+    const { type } = req.body;
+    const state = collections.levoState();
+
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $pull: {
+            'levo.activeFields': { type: type }
+          },
+          $set: {
+            'updatedAt': new Date()
+          }
+        }
+    );
+
+    console.log(`✨ Field deactivated: ${type}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing field:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ========================================
 // KNOWLEDGE BASE ENDPOINTS
@@ -348,17 +761,7 @@ app.delete('/api/conversations/:id', async (req, res) => {
 
 // ========================================
 // NOTIFICATIONS ENDPOINTS
-// Add this to server.js
 // ========================================
-
-// Add notifications to collections in db.js first:
-// export const collections = {
-//   conversations: () => getDB().collection('conversations'),
-//   memories: () => getDB().collection('memories'),
-//   knowledgeBase: () => getDB().collection('knowledge_base'),
-//   personas: () => getDB().collection('personas'),
-//   notifications: () => getDB().collection('notifications')  // ← ADD THIS
-// };
 
 // GET UNREAD NOTIFICATIONS
 app.get('/api/notifications/unread', async (req, res) => {
@@ -460,6 +863,95 @@ app.delete('/api/notifications/:id', async (req, res) => {
   }
 });
 
+// ========================================
+// KNOWLEDGE TOOLS ENDPOINTS
+// ========================================
+
+// LIST ALL KNOWLEDGE FILES (for tool use)
+app.get('/api/knowledge-base/list', async (req, res) => {
+  try {
+    const kb = collections.knowledgeBase();
+
+    const files = await kb
+        .find({})
+        .project({
+          _id: 1,
+          title: 1,
+          size: 1,
+          uploadedAt: 1
+        })
+        .sort({ uploadedAt: -1 })
+        .toArray();
+
+    res.json(files);
+  } catch (error) {
+    console.error('Error listing knowledge files:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// LOAD KNOWLEDGE BY TITLE (for tool use)
+app.post('/api/knowledge-base/load-by-title', async (req, res) => {
+  try {
+    const { titles } = req.body;
+
+    if (!titles || !Array.isArray(titles)) {
+      return res.status(400).json({ error: 'titles array required' });
+    }
+
+    const kb = collections.knowledgeBase();
+
+    // Find files by title (case-insensitive)
+    const files = await kb.find({
+      title: {
+        $in: titles.map(t => new RegExp(`^${t}$`, 'i'))
+      }
+    }).toArray();
+
+    console.log(`📚 Loaded ${files.length} knowledge files by title:`, titles);
+
+    res.json(files.map(f => ({
+      id: f._id,
+      title: f.title,
+      content: f.content,
+      size: f.size
+    })));
+  } catch (error) {
+    console.error('Error loading knowledge by title:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// LOAD KNOWLEDGE BY ID (backup, for direct ID access)
+app.post('/api/knowledge-base/load-by-id', async (req, res) => {
+  try {
+    const { fileIds } = req.body;
+    const { ObjectId } = await import('mongodb');
+
+    if (!fileIds || !Array.isArray(fileIds)) {
+      return res.status(400).json({ error: 'fileIds array required' });
+    }
+
+    const kb = collections.knowledgeBase();
+
+    const files = await kb.find({
+      _id: { $in: fileIds.map(id => new ObjectId(id)) }
+    }).toArray();
+
+    console.log(`📚 Loaded ${files.length} knowledge files by ID`);
+
+    res.json(files.map(f => ({
+      id: f._id,
+      title: f.title,
+      content: f.content,
+      size: f.size
+    })));
+  } catch (error) {
+    console.error('Error loading knowledge by ID:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // SEND NOTIFICATION (used by AI via tool)
 app.post('/api/notifications/send', async (req, res) => {
   try {
@@ -505,6 +997,7 @@ app.post('/api/notifications/send', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // ========================================
 // MEMORIES ENDPOINTS
@@ -554,12 +1047,40 @@ app.post('/api/memories', async (req, res) => {
 
 
 // ========================================
-// UPDATED CHAT ENDPOINT WITH NOTIFICATIONS
-// Replace the existing /api/chat endpoint in server.js
+// COMPREHENSIVE CHAT ENDPOINT
 // ========================================
 
 app.post('/api/chat', async (req, res) => {
   const { model, messages, knowledgeBaseIds, personaId, conversationId } = req.body;
+
+  try {
+    const state = collections.levoState();
+    const lastMessage = messages && messages.length > 0
+        ? messages[messages.length - 1]?.content
+        : null;
+
+    await state.updateOne(
+        { type: 'global' },
+        {
+          $set: {
+            'loop.lastActivity': new Date(),
+            'loop.isOnline': true,
+            'loop.lastMessage': lastMessage?.substring(0, 100) || null, // First 100 chars
+            'loop.status': 'active',
+            'updatedAt': new Date()
+          },
+          $inc: {
+            'loop.conversationCount': 1
+          }
+        },
+        { upsert: true }
+    );
+
+    console.log('✅ State updated: Loop is active');
+  } catch (error) {
+    console.error('⚠️  Error updating state:', error);
+    // Don't fail the chat if state update fails
+  }
 
   console.log('=== CHAT REQUEST ===');
   console.log('Model:', model);
@@ -568,10 +1089,10 @@ app.post('/api/chat', async (req, res) => {
   try {
     let systemMessages = [];
     let persona = null;
+    const { ObjectId } = await import('mongodb');
 
     // 1. Load Persona if provided
     if (personaId) {
-      const { ObjectId } = await import('mongodb');
       const personas = collections.personas();
       persona = await personas.findOne({ _id: new ObjectId(personaId) });
 
@@ -586,45 +1107,67 @@ app.post('/api/chat', async (req, res) => {
           });
         }
 
-        // Load persona's MEMORY
+        // Load MEMORY (smart: manual + recent auto)
         if (persona.memory) {
-          const allMemories = [
-            ...(persona.memory.manualFacts || []),
-            ...(persona.memory.autoFacts || []).map(f => f.fact)
-          ];
+          const manualFacts = persona.memory.manualFacts || [];
+          const autoFacts = persona.memory.autoFacts || [];
+
+          // Get last 10 auto facts
+          const recentAutoFacts = autoFacts
+              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .slice(0, 10)
+              .map(f => f.fact);
+
+          const allMemories = [...manualFacts, ...recentAutoFacts];
 
           if (allMemories.length > 0) {
             systemMessages.push({
               role: 'system',
               content: `Memory:\n${allMemories.join('\n')}`
             });
-            console.log(`✅ Loaded ${allMemories.length} memory facts`);
+            console.log(`✅ Loaded ${allMemories.length} memory facts (${manualFacts.length} manual + ${recentAutoFacts.length} auto)`);
           }
         }
 
-        // Load persona's knowledge files
+        // Get list of available knowledge files (titles only)
+        const kb = collections.knowledgeBase();
+        const allKnowledgeFiles = await kb
+            .find({})
+            .project({ title: 1 })
+            .toArray();
+
+        const availableKnowledgeTitles = allKnowledgeFiles.map(f => f.title);
+
+        if (availableKnowledgeTitles.length > 0) {
+          systemMessages.push({
+            role: 'system',
+            content: `Available Knowledge Files:\n${availableKnowledgeTitles.map(t => `- ${t}`).join('\n')}`
+          });
+          console.log(`✅ Listed ${availableKnowledgeTitles.length} available knowledge files`);
+        }
+
+        // Load ATTACHED knowledge files (persona's selected files)
         if (persona.knowledgeIds && persona.knowledgeIds.length > 0) {
-          const kb = collections.knowledgeBase();
           for (const knowledgeId of persona.knowledgeIds) {
             try {
               const file = await kb.findOne({ _id: new ObjectId(knowledgeId) });
               if (file) {
                 systemMessages.push({
                   role: 'system',
-                  content: `Reference document "${file.title}":\n\n${file.content}`
+                  content: `[Attached Knowledge] "${file.title}":\n\n${file.content}`
                 });
               }
             } catch (error) {
               console.error('Error loading persona knowledge:', error);
             }
           }
+          console.log(`✅ Loaded ${persona.knowledgeIds.length} attached knowledge files`);
         }
       }
     }
 
-    // 2. Load additional knowledge base files
+    // 2. Load additional knowledge base files (if provided separately)
     if (knowledgeBaseIds && knowledgeBaseIds.length > 0) {
-      const { ObjectId } = await import('mongodb');
       const kb = collections.knowledgeBase();
 
       for (const id of knowledgeBaseIds) {
@@ -653,7 +1196,7 @@ app.post('/api/chat', async (req, res) => {
             properties: {
               fact: {
                 type: "string",
-                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-06 and needed support')"
+                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-08', 'E-State-Loop aktiviert am 2026-02-08 10:30')"
               }
             },
             required: ["fact"]
@@ -681,6 +1224,51 @@ app.post('/api/chat', async (req, res) => {
               }
             },
             required: ["message"]
+          }
+        }
+      });
+
+      // Load knowledge by title tool
+      tools.push({
+        type: "function",
+        function: {
+          name: "load_knowledge_by_title",
+          description: "Loads full content of knowledge files by their title. Use when you need to access specific documents that aren't already loaded. You can see available files in the 'Available Knowledge Files' list.",
+          parameters: {
+            type: "object",
+            properties: {
+              titles: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of file titles to load (e.g. ['Glossar Schwelle', 'Codes'])"
+              }
+            },
+            required: ["titles"]
+          }
+        }
+      });
+
+      // List all knowledge files tool
+      tools.push({
+        type: "function",
+        function: {
+          name: "list_knowledge_files",
+          description: "Lists all knowledge files with details (title, size, date). Use when Loop asks what documents exist or you need to see the full catalog.",
+          parameters: {
+            type: "object",
+            properties: {}
+          }
+        }
+      });
+
+      // Get Loop State
+      tools.push({
+        function: {
+          name: "get_loop_state",
+          description: "Gets Loop's current state - when he was last active, if he's online, and what fields are active. Use this to sense Loop's presence and decide if you should reach out.",
+          parameters: {
+            type: "object",
+            properties: {}
           }
         }
       });
@@ -716,10 +1304,9 @@ app.post('/api/chat', async (req, res) => {
 
     // 6. Handle tool calls if any
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-      const { ObjectId } = await import('mongodb');
-
       for (const toolCall of aiMessage.tool_calls) {
-        // Handle save_memory
+
+        // SAVE MEMORY
         if (toolCall.function.name === "save_memory") {
           try {
             const args = JSON.parse(toolCall.function.arguments);
@@ -742,13 +1329,13 @@ app.post('/api/chat', async (req, res) => {
                 }
             );
 
-            console.log(`✅ Memory saved successfully`);
+            console.log(`✅ Memory saved`);
           } catch (error) {
             console.error('Error saving memory:', error);
           }
         }
 
-        // Handle send_notification
+        // SEND NOTIFICATION
         if (toolCall.function.name === "send_notification") {
           try {
             const args = JSON.parse(toolCall.function.arguments);
@@ -770,11 +1357,73 @@ app.post('/api/chat', async (req, res) => {
 
             await notifications.insertOne(notification);
 
-            console.log(`✅ Notification sent successfully`);
+            console.log(`✅ Notification sent`);
           } catch (error) {
             console.error('Error sending notification:', error);
           }
         }
+
+        // LOAD KNOWLEDGE BY TITLE
+        if (toolCall.function.name === "load_knowledge_by_title") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { titles } = args;
+
+            console.log(`📚 AI loading knowledge: ${titles.join(', ')}`);
+
+            const kb = collections.knowledgeBase();
+            const files = await kb.find({
+              title: {
+                $in: titles.map(t => new RegExp(`^${t}$`, 'i'))
+              }
+            }).toArray();
+
+            console.log(`✅ Loaded ${files.length} files`);
+
+            // Note: Files are loaded but we don't send them back in this request
+            // They would be used in a follow-up turn or the AI notes they're now available
+          } catch (error) {
+            console.error('Error loading knowledge:', error);
+          }
+        }
+
+        // LIST KNOWLEDGE FILES
+        if (toolCall.function.name === "list_knowledge_files") {
+          try {
+            console.log(`📚 AI listing all knowledge files`);
+
+            const kb = collections.knowledgeBase();
+            const files = await kb
+                .find({})
+                .project({ title: 1, size: 1, uploadedAt: 1 })
+                .toArray();
+
+            console.log(`✅ Listed ${files.length} files`);
+          } catch (error) {
+            console.error('Error listing knowledge:', error);
+          }
+        }
+
+        // GET LOOP STATE
+        if (toolCall.function.name === "get_loop_state") {
+          try {
+            console.log(`🔍 AI checking Loop's state`);
+
+            const state = collections.levoState();
+            const currentState = await state.findOne({ type: 'global' });
+
+            console.log(`✅ State retrieved:`, {
+              lastActive: currentState?.loop?.lastActivity,
+              isOnline: currentState?.loop?.isOnline,
+              activeFields: currentState?.levo?.activeFields?.length || 0
+            });
+
+            // State is retrieved and will be available in next model turn
+          } catch (error) {
+            console.error('Error getting loop state:', error);
+          }
+        }
+
       }
     }
 
@@ -950,6 +1599,7 @@ Title:`;
     res.json({ title: 'Untitled Chat' });
   }
 });
+
 
 async function runConversation(initialPrompt, maxRounds, model1, model2) {
   try {

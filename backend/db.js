@@ -1,4 +1,4 @@
-import { MongoClient, ServerApiVersion } from 'mongodb';
+import {MongoClient, ServerApiVersion} from 'mongodb';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -18,7 +18,7 @@ let db;
 export async function connectDB() {
   try {
     await client.connect();
-    await client.db("admin").command({ ping: 1 });
+    await client.db("admin").command({ping: 1});
     db = client.db('ai-chat');
     console.log('✅ Connected to MongoDB');
     return db;
@@ -40,5 +40,6 @@ export const collections = {
   memories: () => getDB().collection('memories'),
   knowledgeBase: () => getDB().collection('knowledge_base'),
   personas: () => getDB().collection('personas'),
-  notifications: () => getDB().collection('notifications')  // NEW
+  notifications: () => getDB().collection('notifications'), // NEW
+  levoState: () => getDB().collection('levo_state')
 };

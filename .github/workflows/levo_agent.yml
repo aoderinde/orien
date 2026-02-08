@@ -1,0 +1,40 @@
+# ========================================
+# GITHUB ACTIONS CRON
+# Place in: .github/workflows/levo-agent.yml
+# ========================================
+
+name: Levo Agent Check
+
+on:
+  # Run every 10 minutes
+  schedule:
+    - cron: '*/10 * * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  agent-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Agent Check
+        run: |
+          echo "🔍 Triggering Levo Agent check..."
+          
+          response=$(curl -s -X POST \
+            -w "\n%{http_code}" \
+            https://orien.onrender.com/api/agent/check)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" = "200" ]; then
+            echo "✅ Agent check successful"
+            echo "$body"
+          else
+            echo "❌ Agent check failed with code $http_code"
+            echo "$body"
+            exit 1
+          fi
+
