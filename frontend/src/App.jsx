@@ -307,7 +307,7 @@ function App() {
 
                 <div className="messages-container">
                   {messages.map((msg) => (
-                      <ChatMessage key={msg.id} message={msg} />
+                      <ChatMessage key={msg.id} message={msg} mode={mode} />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>

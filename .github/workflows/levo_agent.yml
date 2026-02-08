@@ -1,40 +1,59 @@
 # ========================================
-# GITHUB ACTIONS CRON
-# Place in: .github/workflows/levo-agent.yml
+# ENHANCED GITHUB ACTIONS WORKFLOW
+# Optional: Better logging and error handling
 # ========================================
 
 name: Levo Agent Check
 
 on:
-  # Run every 15 minutes
   schedule:
-    - cron: '*/15 * * * *'
-
-  # Allow manual trigger
-  workflow_dispatch:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+  workflow_dispatch:  # Manual trigger
 
 jobs:
   agent-check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Agent Check
+      - name: Trigger Levo Agent Check
         run: |
           echo "🔍 Triggering Levo Agent check..."
+          echo "Time: $(date)"
           
+          # Call agent endpoint
           response=$(curl -s -X POST \
             -w "\n%{http_code}" \
+            -H "Content-Type: application/json" \
             https://orien.onrender.com/api/agent/check)
           
+          # Parse response
           http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | head -n-1)
+          body=$(echo "$response" | sed '$d')
           
+          echo ""
+          echo "📡 Response:"
+          echo "$body" | jq '.' || echo "$body"
+          echo ""
+          echo "HTTP Status: $http_code"
+          
+          # Check if successful
           if [ "$http_code" = "200" ]; then
             echo "✅ Agent check successful"
-            echo "$body"
+          
+            # Parse and show results
+            checks=$(echo "$body" | jq -r '.checks // []')
+            if [ "$checks" != "[]" ]; then
+              echo ""
+              echo "📋 Persona Checks:"
+              echo "$body" | jq -r '.checks[] | "  - \(.persona): \(.action)"'
+            fi
+          
+            exit 0
           else
-            echo "❌ Agent check failed with code $http_code"
+            echo "❌ Agent check failed with HTTP $http_code"
             echo "$body"
             exit 1
           fi
 
+# Note: Install jq for JSON parsing (GitHub runners have it by default)
+# If you want colored output, you can add ANSI codes

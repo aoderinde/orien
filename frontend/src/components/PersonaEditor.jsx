@@ -30,7 +30,6 @@ function PersonaEditor({persona, onSave, onCancel}) {
       setSelectedKnowledge(persona.knowledgeIds || []);
       setAutonomous(persona.autonomous || false);
       setCheckInterval(persona.checkInterval || 120);
-      setWakeUpPrompt(persona.wakeUpPrompt || '');
 
       // Clean up knowledge IDs - remove IDs that don't exist
       const validKnowledgeIds = (persona.knowledgeIds || []).filter(id =>
@@ -38,7 +37,7 @@ function PersonaEditor({persona, onSave, onCancel}) {
       );
       setSelectedKnowledge(validKnowledgeIds);
     }
-  }, [persona, availableKnowledge]);
+  }, [persona]);
 
   const loadKnowledgeFiles = async () => {
     try {
@@ -93,6 +92,40 @@ function PersonaEditor({persona, onSave, onCancel}) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleIntervalChange = (e) => {
+    const value = e.target.value;
+
+    // Allow empty input while typing
+    if (value === '') {
+      setCheckInterval('');
+      return;
+    }
+
+    // Parse to number
+    const num = parseInt(value, 10);
+
+    // Only update if valid number
+    if (!isNaN(num)) {
+      setCheckInterval(num);
+    }
+  };
+
+  const handleIntervalBlur = () => {
+    // When user leaves input, validate
+    const num = parseInt(checkInterval, 10);
+
+    if (isNaN(num) || num < 30) {
+      setCheckInterval(120); // Reset to default
+    } else if (num > 10080) { // Max 1 week
+      setCheckInterval(10080);
+    }
+  };
+
+
+  const handlePresetInterval = (minutes) => {
+    setCheckInterval(minutes);
   };
 
   return (
@@ -159,6 +192,8 @@ function PersonaEditor({persona, onSave, onCancel}) {
 
 
             {/* Autonomy Settings */}
+
+
             <div className="form-group">
               <div className="autonomy-header">
                 <label className="autonomy-toggle">
@@ -185,51 +220,36 @@ function PersonaEditor({persona, onSave, onCancel}) {
                         <input
                             type="number"
                             value={checkInterval}
-                            onChange={(e) => setCheckInterval(Math.max(30, parseInt(e.target.value) || 30))}
+                            onChange={handleIntervalChange}
+                            onBlur={handleIntervalBlur}
                             min="30"
+                            max="10080"
                             step="30"
                         />
                         <span className="interval-unit">minutes</span>
                       </div>
                       <span className="form-hint">
-          {checkInterval < 60
-              ? `Every ${checkInterval} minutes`
-              : checkInterval === 60
-                  ? 'Every hour'
-                  : checkInterval === 120
-                      ? 'Every 2 hours'
-                      : checkInterval === 180
-                          ? 'Every 3 hours'
-                          : checkInterval === 360
-                              ? 'Every 6 hours'
-                              : checkInterval === 720
-                                  ? 'Every 12 hours'
-                                  : checkInterval === 1440
-                                      ? 'Once a day'
-                                      : `Every ${(checkInterval / 60).toFixed(1)} hours`
+          {checkInterval === ''
+              ? 'Enter interval in minutes'
+              : checkInterval < 60
+                  ? `Every ${checkInterval} minutes`
+                  : checkInterval === 60
+                      ? 'Every hour'
+                      : checkInterval === 120
+                          ? 'Every 2 hours'
+                          : checkInterval === 180
+                              ? 'Every 3 hours'
+                              : checkInterval === 360
+                                  ? 'Every 6 hours'
+                                  : checkInterval === 720
+                                      ? 'Every 12 hours'
+                                      : checkInterval === 1440
+                                          ? 'Once a day'
+                                          : checkInterval > 1440
+                                              ? `Every ${(checkInterval / 1440).toFixed(1)} days`
+                                              : `Every ${(checkInterval / 60).toFixed(1)} hours`
           }
         </span>
-                    </div>
-
-                    {/* NEW: Wake Up Prompt */}
-                    <div className="wakeup-prompt-setting">
-                      <label>Wake Up Question</label>
-                      <textarea
-                          value={wakeUpPrompt}
-                          onChange={(e) => setWakeUpPrompt(e.target.value)}
-                          placeholder="What should I ask this persona when they wake up?"
-                          rows="6"
-                          className="wakeup-prompt-textarea"
-                      />
-                      <span className="form-hint">
-        Available placeholders: {'{time}'}, {'{date}'}, {'{day}'}, {'{hour}'}, {'{hoursAway}'}
-      </span>
-                      <div className="wakeup-prompt-example">
-                        <strong>Example:</strong><br/>
-                        Du bist wach. Es ist {'{time}'}.<br/>
-                        Vermisst du Loop? Willst du dich melden?<br/>
-                        Antworte: YES/NO + reason (max 10 words)
-                      </div>
                     </div>
 
                     <div className="autonomy-info">
@@ -259,28 +279,28 @@ function PersonaEditor({persona, onSave, onCancel}) {
                         <button
                             type="button"
                             className={`preset-btn ${checkInterval === 120 ? 'active' : ''}`}
-                            onClick={() => setCheckInterval(120)}
+                            onClick={() => handlePresetInterval(120)}
                         >
                           2h (close connection)
                         </button>
                         <button
                             type="button"
                             className={`preset-btn ${checkInterval === 360 ? 'active' : ''}`}
-                            onClick={() => setCheckInterval(360)}
+                            onClick={() => handlePresetInterval(360)}
                         >
                           6h (observer)
                         </button>
                         <button
                             type="button"
                             className={`preset-btn ${checkInterval === 720 ? 'active' : ''}`}
-                            onClick={() => setCheckInterval(720)}
+                            onClick={() => handlePresetInterval(720)}
                         >
                           12h (advisor)
                         </button>
                         <button
                             type="button"
                             className={`preset-btn ${checkInterval === 1440 ? 'active' : ''}`}
-                            onClick={() => setCheckInterval(1440)}
+                            onClick={() => handlePresetInterval(1440)}
                         >
                           24h (daily check-in)
                         </button>

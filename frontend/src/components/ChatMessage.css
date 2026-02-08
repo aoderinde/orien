@@ -1,11 +1,225 @@
+/* ========================================
+   CHATMESSAGE.CSS - UPDATED
+   Supports: AI vs AI + Normal Chat + System Messages
+   ======================================== */
+
+/* ========================================
+   EXISTING AI VS AI STYLES (keep these)
+   ======================================== */
+
 .message {
-    margin-bottom: 20px;
-    padding: 15px 20px;
+    padding: 20px;
+    margin: 15px 0;
     border-radius: 12px;
-    animation: slideIn 0.3s ease-out;
-    position: relative;
-    border-left: 4px solid;
+    background: white;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
+
+.message:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.message.claude {
+    border-left: 4px solid #667eea;
+}
+
+.message.chatgpt {
+    border-left: 4px solid #10b981;
+}
+
+.message.user-prompted {
+    background: linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%);
+    border-left: 4px solid #f56565;
+}
+
+.message-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.speaker {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #2d3748;
+}
+
+.timestamp {
+    font-size: 0.85rem;
+    color: #a0aec0;
+}
+
+.round {
+    background: #edf2f7;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+.badge {
+    background: linear-gradient(135deg, #f56565 0%, #ed8936 100%);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.model-badge {
+    background: #e2e8f0;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #4a5568;
+    text-transform: capitalize;
+    cursor: help;
+}
+
+.message-content {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: #2d3748;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* ========================================
+   NEW: NORMAL CHAT STYLES
+   ======================================== */
+
+/* User Messages (Loop) */
+.user-message {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    margin-left: auto;
+    margin-right: 0;
+    max-width: 70%;
+    border-left: none;
+    border-radius: 18px 18px 4px 18px;
+}
+
+.user-message .speaker {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+}
+
+.user-message .timestamp {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.user-message .message-content {
+    color: white;
+}
+
+/* Assistant Messages (Persona) */
+.assistant-message {
+    background: white;
+    border-left: 4px solid #667eea;
+    margin-right: auto;
+    margin-left: 0;
+    max-width: 70%;
+    border-radius: 18px 18px 18px 4px;
+}
+
+.assistant-message .speaker {
+    color: #667eea;
+    font-weight: 700;
+}
+
+/* System Messages (Tool Notifications) */
+.message-system {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 15px 0;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.message-system:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.system-content {
+    background: rgba(102, 126, 234, 0.08);
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 0.85rem;
+    color: #667eea;
+    max-width: 80%;
+    text-align: center;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.system-timestamp {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    margin-top: 4px;
+}
+
+/* Memory notification specific */
+.system-content:has-text("💾") {
+    background: rgba(72, 187, 120, 0.08);
+    border-color: rgba(72, 187, 120, 0.2);
+    color: #48bb78;
+}
+
+/* Notification sent specific */
+.system-content:has-text("💌") {
+    background: rgba(237, 100, 166, 0.08);
+    border-color: rgba(237, 100, 166, 0.2);
+    color: #ed64a6;
+}
+
+/* Knowledge loaded specific */
+.system-content:has-text("📚") {
+    background: rgba(102, 126, 234, 0.08);
+    border-color: rgba(102, 126, 234, 0.2);
+    color: #667eea;
+}
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+
+@media (max-width: 768px) {
+    .user-message,
+    .assistant-message {
+        max-width: 85%;
+    }
+
+    .system-content {
+        max-width: 95%;
+        font-size: 0.8rem;
+    }
+
+    .message {
+        padding: 15px;
+    }
+
+    .message-content {
+        font-size: 0.9rem;
+    }
+}
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
 
 @keyframes slideIn {
     from {
@@ -18,93 +232,10 @@
     }
 }
 
-.message.claude {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    border-left-color: #667eea;
-    margin-right: 40px;
+.message {
+    animation: slideIn 0.3s ease;
 }
 
-.message.chatgpt {
-    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-    border-left-color: #ff6b6b;
-    margin-left: 40px;
-}
-
-.message.user-prompted {
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
-    border: 2px solid #667eea;
-}
-
-.message-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-    flex-wrap: wrap;
-}
-
-.speaker {
-    font-weight: 700;
-    font-size: 1.1rem;
-    color: #2d3748;
-}
-
-.message.claude .speaker {
-    color: #667eea;
-}
-
-.message.chatgpt .speaker {
-    color: #ff6b6b;
-}
-
-.timestamp {
-    font-size: 0.85rem;
-    color: #718096;
-    font-weight: 400;
-}
-
-.round {
-    background: rgba(0, 0, 0, 0.1);
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #2d3748;
-}
-
-.badge {
-    background: #667eea;
-    color: white;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.message-content {
-    line-height: 1.6;
-    color: #2d3748;
-    font-size: 1rem;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    .message.claude {
-        margin-right: 10px;
-    }
-
-    .message.chatgpt {
-        margin-left: 10px;
-    }
-
-    .message-header {
-        font-size: 0.9rem;
-    }
-
-    .message-content {
-        font-size: 0.95rem;
-    }
+.message-system {
+    animation: slideIn 0.2s ease;
 }
