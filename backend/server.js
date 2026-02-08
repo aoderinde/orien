@@ -159,7 +159,6 @@ app.use('/api/personas', personasRouter);
 // ========================================
 // MULTI-PERSONA AUTONOMOUS AGENT ENDPOINT
 // ========================================
-
 app.post('/api/agent/check', async (req, res) => {
   console.log(`\n🔍 [${new Date().toISOString()}] Multi-Persona Agent check...`);
 
@@ -244,25 +243,7 @@ app.post('/api/agent/check', async (req, res) => {
         continue;
       }
 
-      if (quickCheck.wantsToAct) {
-        const fullResponse = await callPersonaFull({
-          persona,
-          state: currentState
-        });
-
-        if (fullResponse) {
-          // This works for both Hermes and standard format!
-          await handlePersonaToolCalls(fullResponse.tool_calls, persona);
-
-          results.push({
-            persona: persona.name,
-            action: 'acted',
-            tools: fullResponse.tool_calls?.length || 0
-          });
-        }
-      }
-
-      // STAGE 2: Full call with tools
+      // STAGE 2: Full call with tools (only if wantsToAct)
       console.log(`   💙 ${persona.name} wants to act!`);
       console.log(`   🔧 Full check with tools...`);
 
@@ -272,10 +253,40 @@ app.post('/api/agent/check', async (req, res) => {
       });
 
       if (fullResponse) {
+        // Log content
         if (fullResponse.content) {
-          console.log(`   💬 ${persona.name}: "${fullResponse.content}"`);
+          console.log(`   💬 ${persona.name}: "${fullResponse.content.substring(0, 150)}..."`);
         }
 
+        // Detect tool format
+        const toolFormat = getToolFormat(persona.model);
+
+        // Parse Hermes tool calls if needed
+        if (toolFormat === 'hermes' && fullResponse.content) {
+          const hermesToolCalls = parseHermesToolCalls(fullResponse.content);
+          if (hermesToolCalls.length > 0) {
+            fullResponse.tool_calls = hermesToolCalls;
+            console.log(`   ✅ Parsed ${hermesToolCalls.length} Hermes tool calls`);
+          }
+        }
+
+        // AUTO-SEND: If persona wrote content but NO tool call, convert to notification
+        if (fullResponse.content && (!fullResponse.tool_calls || fullResponse.tool_calls.length === 0)) {
+          console.log(`   💌 ${persona.name} wrote without tool_call, auto-sending as notification...`);
+
+          fullResponse.tool_calls = [{
+            type: 'function',
+            function: {
+              name: 'send_notification',
+              arguments: JSON.stringify({
+                message: fullResponse.content.trim(),
+                urgency: 'low'
+              })
+            }
+          }];
+        }
+
+        // Handle tool calls (including auto-converted content)
         await handlePersonaToolCalls(fullResponse.tool_calls, persona);
 
         results.push({
