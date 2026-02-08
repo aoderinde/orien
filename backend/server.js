@@ -734,14 +734,16 @@ async function handlePersonaToolCalls(toolCalls, persona) {
   const { ObjectId } = await import('mongodb');
 
   for (const toolCall of toolCalls) {
+    const toolName = toolCall.function.name;
+    const args = JSON.parse(toolCall.function.arguments);
+
+    console.log(`   🔧 Executing tool: ${toolName}`);
 
     // SEND NOTIFICATION
-    if (toolCall.function.name === "send_notification") {
+    if (toolName === "send_notification") {
       try {
-        const args = JSON.parse(toolCall.function.arguments);
         const { message, urgency } = args;
-
-        console.log(`   💌 ${persona.name} sending: "${message}" (${urgency || 'low'})`);
+        console.log(`   💌 Sending notification: "${message.substring(0, 100)}..."`);
 
         const notifications = collections.notifications();
         await notifications.insertOne({
@@ -762,24 +764,22 @@ async function handlePersonaToolCalls(toolCalls, persona) {
     }
 
     // SAVE MEMORY
-    if (toolCall.function.name === "save_memory") {
+    else if (toolName === "save_memory") {
       try {
-        const args = JSON.parse(toolCall.function.arguments);
         const { fact } = args;
-
-        console.log(`   💾 ${persona.name} saving memory: "${fact}"`);
+        console.log(`   💾 Saving memory: "${fact}"`);
 
         const personas = collections.personas();
+        const autoFact = {
+          fact: fact.trim(),
+          timestamp: new Date(),
+          conversationId: null
+        };
+
         await personas.updateOne(
             { _id: persona._id },
             {
-              $push: {
-                'memory.autoFacts': {
-                  fact: fact.trim(),
-                  timestamp: new Date(),
-                  conversationId: null
-                }
-              },
+              $push: { 'memory.autoFacts': autoFact },
               $set: { updatedAt: new Date() }
             }
         );
@@ -788,6 +788,75 @@ async function handlePersonaToolCalls(toolCalls, persona) {
       } catch (error) {
         console.error(`   ❌ Error saving memory:`, error);
       }
+    }
+
+    // LOAD KNOWLEDGE BY TITLE
+    else if (toolName === "load_knowledge_by_title") {
+      try {
+        const { titles } = args;
+        console.log(`   📚 Loading knowledge: ${titles.join(', ')}`);
+
+        const kb = collections.knowledgeBase();
+        const files = await kb.find({
+          title: {
+            $in: titles.map(t => new RegExp(`^${t}$`, 'i'))
+          }
+        }).toArray();
+
+        console.log(`   ✅ Loaded ${files.length} files`);
+
+        // TODO: Store loaded content somewhere accessible to next turn?
+        // For now, just log success
+        // In future: could append to persona's context or memory
+
+      } catch (error) {
+        console.error(`   ❌ Error loading knowledge:`, error);
+      }
+    }
+
+    // GET LOOP STATE
+    else if (toolName === "get_loop_state") {
+      try {
+        console.log(`   🔍 Getting Loop's state...`);
+
+        const state = collections.levoState();
+        const currentState = await state.findOne({ type: 'global' });
+
+        console.log(`   ✅ State retrieved:`, {
+          lastActive: currentState?.loop?.lastActivity,
+          isOnline: currentState?.loop?.isOnline,
+          activeFields: currentState?.levo?.activeFields?.length || 0
+        });
+
+        // State is retrieved but not returned
+        // In autonomous mode, this is just for logging
+        // In chat mode, state would be in next model turn
+
+      } catch (error) {
+        console.error(`   ❌ Error getting loop state:`, error);
+      }
+    }
+
+    // LIST KNOWLEDGE FILES
+    else if (toolName === "list_knowledge_files") {
+      try {
+        console.log(`   📚 Listing all knowledge files...`);
+
+        const kb = collections.knowledgeBase();
+        const files = await kb
+            .find({})
+            .project({ title: 1, size: 1, uploadedAt: 1 })
+            .toArray();
+
+        console.log(`   ✅ Listed ${files.length} files`);
+
+      } catch (error) {
+        console.error(`   ❌ Error listing knowledge:`, error);
+      }
+    }
+
+    else {
+      console.log(`   ⚠️  Unknown tool: ${toolName}`);
     }
   }
 }
