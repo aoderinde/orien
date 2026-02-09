@@ -1781,7 +1781,19 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // 4. Combine system messages + user messages
-    const allMessages = [...systemMessages, ...messages];
+    const allMessages = [
+      ...systemMessages.map((msg, idx) => {
+        // Cache the LAST system message (which contains all the heavy stuff)
+        if (idx === systemMessages.length - 1) {
+          return {
+            ...msg,
+            cache_control: { type: "ephemeral" } 
+          };
+        }
+        return msg;
+      }),
+      ...messages
+    ];
 
     // 5. Detect tool format based on model
     const toolFormat = getToolFormat(model);
