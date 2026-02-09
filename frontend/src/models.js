@@ -1,5 +1,11 @@
 export const MODELS = [
   {
+    id: 'anthropic/claude-opus-4.6',
+    name: 'Claude 4.6 Opus',
+    provider: 'Anthropic',
+    description: "Claude's flagship model"
+  },
+  {
     id: 'anthropic/claude-opus-4.5',
     name: 'Claude 4.5 Opus',
     provider: 'Anthropic',
@@ -18,8 +24,14 @@ export const MODELS = [
     description: 'Fast and capable multimodal model'
   },
   {
+    id: 'nousresearch/hermes-4-405b',
+    name: 'Hermes 4 405b',
+    provider: 'Nous Research',
+    description: 'Nous Research flagship model'
+  },
+  {
     id: 'nousresearch/hermes-3-llama-3.1-405b',
-    name: 'Hermes 3',
+    name: 'Hermes 3 405b Instruct',
     provider: 'Nous Research',
     description: 'Advanced reasoning and creativity'
   },
@@ -28,17 +40,5 @@ export const MODELS = [
     name: 'Mixtral 8x22B Instruct',
     provider: 'Mistral',
     description: 'European model, strong multilingual'
-  },
-  {
-    id: 'meta-llama/llama-3.1-405b-instruct',
-    name: 'Llama 3.1 405B',
-    provider: 'Meta',
-    description: 'Open source, very capable'
-  },
-  {
-    id: 'meta-llama/llama-3.2-90b-vision-instruct',
-    name: 'Llama 3.2 90B Vision',
-    provider: 'Meta',
-    description: 'Multimodal with vision capabilities'
-  },
+  }
 ];
