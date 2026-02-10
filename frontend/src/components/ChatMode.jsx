@@ -251,14 +251,10 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         personaId: selectedPersonaId
       });
 
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.data.message,
-        timestamp: new Date().toISOString(),
-        model: modelToUse
-      };
+      // Collect all messages to add (assistant + tool notifications)
+      const newMessages = [];
 
-// Check if AI used tools
+      // Check if AI used tools - add tool notifications BEFORE the message
       if (response.data.toolCalls && response.data.toolCalls.length > 0) {
         for (const toolCall of response.data.toolCalls) {
           // Show notification for save_memory
@@ -266,11 +262,10 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
             try {
               const args = JSON.parse(toolCall.function.arguments);
               const fact = args.fact;
-
-              // Add system message showing memory was saved
-              assistantMessage.push({
+              newMessages.push({
                 role: 'system',
-                content: `💾 Memory gespeichert: "${fact}"`,
+                content: `💾 Memory gespeichert: "${fact.substring(0, 100)}${fact.length > 100 ? '...' : ''}"`,
+                timestamp: new Date().toISOString(),
                 type: 'tool_notification'
               });
             } catch (e) {
@@ -283,10 +278,26 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
             try {
               const args = JSON.parse(toolCall.function.arguments);
               const message = args.message;
-
-              assistantMessage.push({
+              newMessages.push({
                 role: 'system',
-                content: `💌 Notification gesendet: "${message}"`,
+                content: `💌 Notification gesendet`,
+                timestamp: new Date().toISOString(),
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+
+          // Show notification for load_knowledge
+          if (toolCall.function.name === 'load_knowledge_by_title') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const titles = args.titles;
+              newMessages.push({
+                role: 'system',
+                content: `📚 Knowledge geladen: ${titles.join(', ')}`,
+                timestamp: new Date().toISOString(),
                 type: 'tool_notification'
               });
             } catch (e) {
@@ -296,7 +307,17 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         }
       }
 
-      setMessages(prev => [...prev, assistantMessage]);
+      // Add the assistant message (only if there's content)
+      if (response.data.message) {
+        newMessages.push({
+          role: 'assistant',
+          content: response.data.message,
+          timestamp: new Date().toISOString(),
+          model: modelToUse
+        });
+      }
+
+      setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
       console.error('Error:', error);
       const errorMessage = {

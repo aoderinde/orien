@@ -1838,20 +1838,29 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    // 4. Combine system messages + user messages
-    const allMessages = [
-      ...systemMessages.map((msg, idx) => {
-        // Cache the LAST system message (which contains all the heavy stuff)
-        if (idx === systemMessages.length - 1) {
-          return {
-            ...msg,
-            cache_control: { type: "ephemeral" } 
-          };
+    // 4. Combine system messages WITH PROPER CACHING
+    // For Anthropic: cache_control must be inside content array, not on message level
+    // Combine ALL system content into ONE message for efficient caching
+    const combinedSystemContent = systemMessages
+      .map(msg => msg.content)
+      .join('\n\n---\n\n');
+    
+    // Create properly formatted system message with caching
+    // Using 1h TTL for longer sessions (you chat 20min-2h typically)
+    const cachedSystemMessages = [{
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: combinedSystemContent,
+          cache_control: { type: "ephemeral", ttl: "1h" }
         }
-        return msg;
-      }),
-      ...messages
-    ];
+      ]
+    }];
+
+    // Log token estimate for caching debugging
+    const estimatedTokens = Math.ceil(combinedSystemContent.length / 4);
+    console.log(`📦 System content: ~${estimatedTokens} tokens (min 1024 for caching)`);
 
     // 5. Detect tool format based on model
     const toolFormat = getToolFormat(model);
@@ -1860,14 +1869,14 @@ app.post('/api/chat', async (req, res) => {
     // For Hermes: Add tools to system message instead of API parameter
     if (toolFormat === 'hermes' && tools.length > 0) {
       const hermesTools = buildHermesToolsFromStandard(tools);
-      systemMessages.push({
+      cachedSystemMessages.push({
         role: 'system',
         content: hermesTools
       });
     }
 
-    // Rebuild messages with updated system messages
-    const finalMessages = [...systemMessages, ...messages];
+    // Combine cached system messages with user messages
+    const finalMessages = [...cachedSystemMessages, ...messages];
 
     // 6. Build API request
     const requestBody = {
@@ -1900,6 +1909,19 @@ app.post('/api/chat', async (req, res) => {
 
     const data = await response.json();
     const aiMessage = data.choices[0].message;
+
+    // Log caching metrics if available
+    if (data.usage) {
+      const usage = data.usage;
+      console.log(`📊 Token usage: input=${usage.prompt_tokens}, output=${usage.completion_tokens}`);
+      if (usage.prompt_tokens_details) {
+        const details = usage.prompt_tokens_details;
+        console.log(`💾 Cache: read=${details.cached_tokens || 0}, write=${details.cache_write_tokens || 0}`);
+      }
+      if (data.cache_discount) {
+        console.log(`💰 Cache discount: ${data.cache_discount}`);
+      }
+    }
 
     // 8. Parse Hermes tool calls if needed
     if (toolFormat === 'hermes' && aiMessage.content) {

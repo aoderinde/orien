@@ -46,6 +46,11 @@ function NotificationPanel({ isOpen, onClose }) {
   };
 
   const deleteNotification = async (id) => {
+    // Confirmation dialog before delete
+    if (!window.confirm('Notification wirklich löschen?')) {
+      return;
+    }
+    
     try {
       await axios.delete(`${API_URL}/api/notifications/${id}`);
       setNotifications(prev => prev.filter(n => n._id !== id));
