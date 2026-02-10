@@ -760,7 +760,26 @@ async function handlePersonaToolCalls(toolCalls, persona) {
 
   for (const toolCall of toolCalls) {
     const toolName = toolCall.function.name;
-    const args = JSON.parse(toolCall.function.arguments);
+    
+    let args;
+    try {
+      args = JSON.parse(toolCall.function.arguments);
+    } catch (parseError) {
+      console.error(`   ❌ Error parsing tool arguments for ${toolName}:`, parseError.message);
+      console.error(`   📄 Raw arguments: "${toolCall.function.arguments.substring(0, 200)}..."`);
+      // Try to salvage what we can - extract message if it's a notification
+      if (toolName === 'send_notification') {
+        const msgMatch = toolCall.function.arguments.match(/"message"\s*:\s*"([^"]+)/);
+        if (msgMatch) {
+          args = { message: msgMatch[1], urgency: 'low' };
+          console.log(`   🔧 Salvaged notification message from malformed JSON`);
+        } else {
+          continue; // Skip this tool call
+        }
+      } else {
+        continue; // Skip this tool call
+      }
+    }
 
     console.log(`   🔧 Executing tool: ${toolName}`);
 
@@ -792,24 +811,54 @@ async function handlePersonaToolCalls(toolCalls, persona) {
     else if (toolName === "save_memory") {
       try {
         const { fact } = args;
-        console.log(`   💾 Saving memory: "${fact}"`);
+        const factTrimmed = fact.trim();
+        console.log(`   💾 Attempting to save memory: "${factTrimmed.substring(0, 80)}..."`);
 
         const personas = collections.personas();
-        const autoFact = {
-          fact: fact.trim(),
-          timestamp: new Date(),
-          conversationId: null
-        };
+        
+        // Get current persona to check for duplicates
+        const currentPersona = await personas.findOne({ _id: persona._id });
+        const existingFacts = currentPersona?.memory?.autoFacts || [];
+        
+        // Check for similar facts (simple similarity: same first 50 chars or >80% overlap)
+        const isDuplicate = existingFacts.some(existing => {
+          const existingFact = existing.fact || '';
+          // Check if first 50 chars match
+          if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) {
+            console.log(`   ⚠️ Duplicate detected (same start): skipping`);
+            return true;
+          }
+          // Check for high overlap (simple word-based)
+          const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+          const newWords = factTrimmed.toLowerCase().split(/\s+/);
+          const matchCount = newWords.filter(w => existingWords.has(w)).length;
+          const overlapRatio = matchCount / Math.max(newWords.length, 1);
+          if (overlapRatio > 0.8) {
+            console.log(`   ⚠️ Duplicate detected (${(overlapRatio * 100).toFixed(0)}% overlap): skipping`);
+            return true;
+          }
+          return false;
+        });
 
-        await personas.updateOne(
-            { _id: persona._id },
-            {
-              $push: { 'memory.autoFacts': autoFact },
-              $set: { updatedAt: new Date() }
-            }
-        );
+        if (isDuplicate) {
+          console.log(`   ⏭️ Memory already exists, not saving duplicate`);
+        } else {
+          const autoFact = {
+            fact: factTrimmed,
+            timestamp: new Date(),
+            conversationId: null
+          };
 
-        console.log(`   ✅ Memory saved`);
+          await personas.updateOne(
+              { _id: persona._id },
+              {
+                $push: { 'memory.autoFacts': autoFact },
+                $set: { updatedAt: new Date() }
+              }
+          );
+
+          console.log(`   ✅ Memory saved (new fact)`);
+        }
       } catch (error) {
         console.error(`   ❌ Error saving memory:`, error);
       }
@@ -1557,7 +1606,16 @@ app.post('/api/memories', async (req, res) => {
 // ========================================
 
 app.post('/api/chat', async (req, res) => {
-  const { model, messages, knowledgeBaseIds, personaId, conversationId } = req.body;
+  const { model, knowledgeBaseIds, personaId, conversationId } = req.body;
+  let { messages } = req.body;
+
+  // LIMIT MESSAGES to reduce token costs
+  // Keep last 30 messages (roughly 15 exchanges)
+  const MAX_MESSAGES = 30;
+  if (messages && messages.length > MAX_MESSAGES) {
+    console.log(`⚠️ Trimming messages from ${messages.length} to ${MAX_MESSAGES}`);
+    messages = messages.slice(-MAX_MESSAGES);
+  }
 
   try {
     const state = collections.levoState();
@@ -1861,25 +1919,46 @@ app.post('/api/chat', async (req, res) => {
           try {
             const args = JSON.parse(toolCall.function.arguments);
             const { fact } = args;
+            const factTrimmed = fact.trim();
 
-            console.log(`💾 AI saving memory: "${fact}"`);
+            console.log(`💾 AI attempting to save memory: "${factTrimmed.substring(0, 80)}..."`);
 
             const personas = collections.personas();
-            const autoFact = {
-              fact: fact.trim(),
-              timestamp: new Date(),
-              conversationId: conversationId || null
-            };
+            
+            // Check for duplicates first
+            const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+            const existingFacts = currentPersona?.memory?.autoFacts || [];
+            
+            const isDuplicate = existingFacts.some(existing => {
+              const existingFact = existing.fact || '';
+              if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) {
+                return true;
+              }
+              const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+              const newWords = factTrimmed.toLowerCase().split(/\s+/);
+              const matchCount = newWords.filter(w => existingWords.has(w)).length;
+              return (matchCount / Math.max(newWords.length, 1)) > 0.8;
+            });
 
-            await personas.updateOne(
-                { _id: new ObjectId(personaId) },
-                {
-                  $push: { 'memory.autoFacts': autoFact },
-                  $set: { updatedAt: new Date() }
-                }
-            );
+            if (isDuplicate) {
+              console.log(`⏭️ Memory already exists, skipping duplicate`);
+            } else {
+              const autoFact = {
+                fact: factTrimmed,
+                timestamp: new Date(),
+                conversationId: conversationId || null
+              };
 
-            console.log(`✅ Memory saved`);
+              await personas.updateOne(
+                  { _id: new ObjectId(personaId) },
+                  {
+                    $push: { 'memory.autoFacts': autoFact },
+                    $set: { updatedAt: new Date() }
+                  }
+              );
+
+              console.log(`✅ Memory saved (new fact)`);
+            }
           } catch (error) {
             console.error('Error saving memory:', error);
           }
