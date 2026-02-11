@@ -2043,6 +2043,10 @@ app.post('/api/chat', async (req, res) => {
     let totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
     let searchResultsForFrontend = [];
     
+    // Track which one-time tools have been executed to prevent duplicates
+    let summaryAlreadySaved = false;
+    let factsAlreadySaved = new Set(); // Track by first 50 chars
+    
     // Allow up to 3 iterations for tool use
     for (let iteration = 0; iteration < 3; iteration++) {
       const response = await fetch(OPENROUTER_URL, {
@@ -2167,35 +2171,43 @@ app.post('/api/chat', async (req, res) => {
               const args = JSON.parse(toolCall.function.arguments);
               const { fact } = args;
               const factTrimmed = fact.trim();
+              const factKey = factTrimmed.substring(0, 50);
 
-              console.log(`💾 Saving fact: "${factTrimmed.substring(0, 80)}..."`);
-
-              const personas = collections.personas();
-              const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
-              const existingFacts = currentPersona?.memory?.facts || [];
-              
-              const isDuplicate = existingFacts.some(existing => {
-                const existingFact = existing.fact || '';
-                if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) return true;
-                const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
-                const newWords = factTrimmed.toLowerCase().split(/\s+/);
-                const matchCount = newWords.filter(w => existingWords.has(w)).length;
-                return (matchCount / Math.max(newWords.length, 1)) > 0.8;
-              });
-
-              if (isDuplicate) {
-                console.log(`⏭️ Fact already exists, skipping`);
-                toolResult = "Fact already saved (duplicate)";
+              // Check if already processed in this request
+              if (factsAlreadySaved.has(factKey)) {
+                console.log(`⏭️ Fact already saved in this request, skipping`);
+                toolResult = "Fact already saved in this request";
               } else {
-                await personas.updateOne(
-                  { _id: new ObjectId(personaId) },
-                  {
-                    $push: { 'memory.facts': { fact: factTrimmed, timestamp: new Date(), conversationId } },
-                    $set: { updatedAt: new Date() }
-                  }
-                );
-                console.log(`✅ Fact saved`);
-                toolResult = "Fact saved successfully";
+                console.log(`💾 Saving fact: "${factTrimmed.substring(0, 80)}..."`);
+
+                const personas = collections.personas();
+                const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+                const existingFacts = currentPersona?.memory?.facts || [];
+                
+                const isDuplicate = existingFacts.some(existing => {
+                  const existingFact = existing.fact || '';
+                  if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) return true;
+                  const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+                  const newWords = factTrimmed.toLowerCase().split(/\s+/);
+                  const matchCount = newWords.filter(w => existingWords.has(w)).length;
+                  return (matchCount / Math.max(newWords.length, 1)) > 0.8;
+                });
+
+                if (isDuplicate) {
+                  console.log(`⏭️ Fact already exists in DB, skipping`);
+                  toolResult = "Fact already saved (duplicate)";
+                } else {
+                  await personas.updateOne(
+                    { _id: new ObjectId(personaId) },
+                    {
+                      $push: { 'memory.facts': { fact: factTrimmed, timestamp: new Date(), conversationId } },
+                      $set: { updatedAt: new Date() }
+                    }
+                  );
+                  console.log(`✅ Fact saved`);
+                  toolResult = "Fact saved successfully";
+                }
+                factsAlreadySaved.add(factKey);  // Mark as processed
               }
             } catch (error) {
               console.error('Error saving fact:', error);
@@ -2205,36 +2217,43 @@ app.post('/api/chat', async (req, res) => {
           
           // SAVE SUMMARY - no result needed, but acknowledge
           else if (toolCall.function.name === "save_summary") {
-            try {
-              const args = JSON.parse(toolCall.function.arguments);
-              const { summary } = args;
-              const now = new Date();
-              const timestamp = now.toLocaleString('de-DE', { 
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-              });
+            // Check if summary already saved in this request
+            if (summaryAlreadySaved) {
+              console.log(`⏭️ Summary already saved in this request, skipping`);
+              toolResult = "Summary already saved in this request";
+            } else {
+              try {
+                const args = JSON.parse(toolCall.function.arguments);
+                const { summary } = args;
+                const now = new Date();
+                const timestamp = now.toLocaleString('de-DE', { 
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
+                });
 
-              console.log(`📝 Saving summary: "${summary.substring(0, 80)}..."`);
+                console.log(`📝 Saving summary: "${summary.substring(0, 80)}..."`);
 
-              const personas = collections.personas();
-              await personas.updateOne(
-                { _id: new ObjectId(personaId) },
-                {
-                  $set: { 
-                    'memory.currentSummary': {
-                      summary: `[${timestamp}] ${summary.trim()}`,
-                      timestamp: now,
-                      conversationId
-                    },
-                    updatedAt: now 
+                const personas = collections.personas();
+                await personas.updateOne(
+                  { _id: new ObjectId(personaId) },
+                  {
+                    $set: { 
+                      'memory.currentSummary': {
+                        summary: `[${timestamp}] ${summary.trim()}`,
+                        timestamp: now,
+                        conversationId
+                      },
+                      updatedAt: now 
+                    }
                   }
-                }
-              );
-              console.log(`✅ Summary saved`);
-              toolResult = "Summary saved (replaced previous)";
-            } catch (error) {
-              console.error('Error saving summary:', error);
-              toolResult = `Error: ${error.message}`;
+                );
+                console.log(`✅ Summary saved`);
+                toolResult = "Summary saved (replaced previous)";
+                summaryAlreadySaved = true;  // Mark as done
+              } catch (error) {
+                console.error('Error saving summary:', error);
+                toolResult = `Error: ${error.message}`;
+              }
             }
           }
           

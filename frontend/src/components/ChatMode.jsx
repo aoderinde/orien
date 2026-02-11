@@ -256,7 +256,9 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
 
       // Check if AI used tools - add tool notifications BEFORE the message
       if (response.data.toolCalls && response.data.toolCalls.length > 0) {
+        console.log('🔧 Tool calls received:', response.data.toolCalls);
         for (const toolCall of response.data.toolCalls) {
+          console.log('Processing tool call:', toolCall.function?.name || toolCall);
           // Show notification for save_memory
           if (toolCall.function.name === 'save_memory') {
             try {
