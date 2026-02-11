@@ -2036,363 +2036,313 @@ app.post('/api/chat', async (req, res) => {
       requestBody.tools = tools;
     }
 
-    // 7. Call AI
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:3001',
-        'X-Title': 'Orien Chat'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // 7. Call AI (with potential tool use loop)
+    let currentMessages = [...finalMessages];
+    let finalAiMessage = null;
+    let allToolCalls = [];
+    let totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
+    let searchResultsForFrontend = [];
+    
+    // Allow up to 3 iterations for tool use
+    for (let iteration = 0; iteration < 3; iteration++) {
+      const response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'http://localhost:3001',
+          'X-Title': 'Orien Chat'
+        },
+        body: JSON.stringify({
+          ...requestBody,
+          messages: currentMessages
+        })
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error: ${response.statusText} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    const aiMessage = data.choices[0].message;
-
-    // Log caching metrics if available
-    if (data.usage) {
-      const usage = data.usage;
-      console.log(`📊 Token usage: input=${usage.prompt_tokens}, output=${usage.completion_tokens}`);
-      if (usage.prompt_tokens_details) {
-        const details = usage.prompt_tokens_details;
-        console.log(`💾 Cache: read=${details.cached_tokens || 0}, write=${details.cache_write_tokens || 0}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error: ${response.statusText} - ${errorText}`);
       }
-      if (data.cache_discount) {
-        console.log(`💰 Cache discount: ${data.cache_discount}`);
-      }
-    }
 
-    // 8. Parse Hermes tool calls if needed
-    if (toolFormat === 'hermes' && aiMessage.content) {
-      const hermesToolCalls = parseHermesToolCalls(aiMessage.content);
-      if (hermesToolCalls.length > 0) {
-        aiMessage.tool_calls = hermesToolCalls;
-        console.log(`✅ Parsed ${hermesToolCalls.length} Hermes tool calls`);
-      }
-    }
-
-    // 9. Handle tool calls if any
-    if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-      for (const toolCall of aiMessage.tool_calls) {
-
-        // SAVE FACT (persistent, stacks up)
-        if (toolCall.function.name === "save_fact") {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { fact } = args;
-            const factTrimmed = fact.trim();
-
-            console.log(`💾 AI saving fact: "${factTrimmed.substring(0, 80)}..."`);
-
-            const personas = collections.personas();
-            
-            // Check for duplicates
-            const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
-            const existingFacts = currentPersona?.memory?.facts || [];
-            
-            const isDuplicate = existingFacts.some(existing => {
-              const existingFact = existing.fact || '';
-              if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) {
-                return true;
-              }
-              const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
-              const newWords = factTrimmed.toLowerCase().split(/\s+/);
-              const matchCount = newWords.filter(w => existingWords.has(w)).length;
-              return (matchCount / Math.max(newWords.length, 1)) > 0.8;
-            });
-
-            if (isDuplicate) {
-              console.log(`⏭️ Fact already exists, skipping duplicate`);
-            } else {
-              const newFact = {
-                fact: factTrimmed,
-                timestamp: new Date(),
-                conversationId: conversationId || null
-              };
-
-              await personas.updateOne(
-                  { _id: new ObjectId(personaId) },
-                  {
-                    $push: { 'memory.facts': newFact },
-                    $set: { updatedAt: new Date() }
-                  }
-              );
-
-              console.log(`✅ Fact saved`);
-            }
-          } catch (error) {
-            console.error('Error saving fact:', error);
+      const data = await response.json();
+      const aiMessage = data.choices[0].message;
+      
+      // Accumulate usage
+      if (data.usage) {
+        totalUsage.prompt_tokens += data.usage.prompt_tokens || 0;
+        totalUsage.completion_tokens += data.usage.completion_tokens || 0;
+        
+        // Log on first iteration only
+        if (iteration === 0) {
+          console.log(`📊 Token usage: input=${data.usage.prompt_tokens}, output=${data.usage.completion_tokens}`);
+          if (data.usage.prompt_tokens_details) {
+            const details = data.usage.prompt_tokens_details;
+            console.log(`💾 Cache: read=${details.cached_tokens || 0}, write=${details.cache_write_tokens || 0}`);
           }
         }
+      }
 
-        // SAVE SUMMARY (rolling, replaces previous)
-        if (toolCall.function.name === "save_summary") {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { summary } = args;
-            const summaryTrimmed = summary.trim();
-            const now = new Date();
-            const timestamp = now.toLocaleString('de-DE', { 
-              day: '2-digit', month: '2-digit', year: 'numeric',
-              hour: '2-digit', minute: '2-digit'
-            });
+      // Check if AI wants to use tools
+      if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
+        console.log(`🔧 AI requested ${aiMessage.tool_calls.length} tool(s) in iteration ${iteration + 1}`);
+        
+        // Add AI message to conversation
+        currentMessages.push({
+          role: 'assistant',
+          content: aiMessage.content || '',
+          tool_calls: aiMessage.tool_calls
+        });
+        
+        // Process each tool call
+        for (const toolCall of aiMessage.tool_calls) {
+          allToolCalls.push(toolCall);
+          let toolResult = null;
+          
+          // SEARCH KNOWLEDGE - needs result returned to AI
+          if (toolCall.function.name === "search_knowledge") {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const { query, files, maxResults = 5 } = args;
+              const limit = Math.min(maxResults, 10);
 
-            console.log(`📝 AI saving summary: "${summaryTrimmed.substring(0, 80)}..."`);
+              console.log(`🔍 Searching knowledge for: "${query}"`);
 
-            const personas = collections.personas();
-            
-            // Replace the existing summary (only keep ONE)
-            const summaryEntry = {
-              summary: `[${timestamp}] ${summaryTrimmed}`,
-              timestamp: now,
-              conversationId: conversationId || null
-            };
+              const kb = collections.knowledgeBase();
+              let dbQuery = {};
+              if (files && files.length > 0) {
+                dbQuery.title = { $in: files.map(t => new RegExp(t, 'i')) };
+              }
 
-            await personas.updateOne(
+              const allFiles = await kb.find(dbQuery).toArray();
+              const results = [];
+
+              for (const file of allFiles) {
+                if (!file.content) continue;
+                
+                const lines = file.content.split('\n');
+                const queryLower = query.toLowerCase();
+
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].toLowerCase().includes(queryLower)) {
+                    const contextStart = Math.max(0, i - 2);
+                    const contextEnd = Math.min(lines.length - 1, i + 2);
+                    const context = lines.slice(contextStart, contextEnd + 1).join('\n');
+
+                    results.push({
+                      file: file.title,
+                      line: i + 1,
+                      context: context.substring(0, 500)
+                    });
+
+                    if (results.length >= limit) break;
+                  }
+                }
+                if (results.length >= limit) break;
+              }
+
+              console.log(`✅ Found ${results.length} results for "${query}"`);
+              
+              // Format results for AI
+              if (results.length > 0) {
+                toolResult = `Search results for "${query}":\n\n` + 
+                  results.map((r, idx) => 
+                    `[${idx + 1}] File: ${r.file}, Line ${r.line}:\n${r.context}`
+                  ).join('\n\n---\n\n');
+              } else {
+                toolResult = `No results found for "${query}"`;
+              }
+              
+              // Store for frontend display
+              searchResultsForFrontend.push({ query, results });
+              
+            } catch (error) {
+              console.error('Error in search_knowledge:', error);
+              toolResult = `Error searching: ${error.message}`;
+            }
+          }
+          
+          // SAVE FACT - no result needed, but acknowledge
+          else if (toolCall.function.name === "save_fact") {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const { fact } = args;
+              const factTrimmed = fact.trim();
+
+              console.log(`💾 Saving fact: "${factTrimmed.substring(0, 80)}..."`);
+
+              const personas = collections.personas();
+              const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+              const existingFacts = currentPersona?.memory?.facts || [];
+              
+              const isDuplicate = existingFacts.some(existing => {
+                const existingFact = existing.fact || '';
+                if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) return true;
+                const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+                const newWords = factTrimmed.toLowerCase().split(/\s+/);
+                const matchCount = newWords.filter(w => existingWords.has(w)).length;
+                return (matchCount / Math.max(newWords.length, 1)) > 0.8;
+              });
+
+              if (isDuplicate) {
+                console.log(`⏭️ Fact already exists, skipping`);
+                toolResult = "Fact already saved (duplicate)";
+              } else {
+                await personas.updateOne(
+                  { _id: new ObjectId(personaId) },
+                  {
+                    $push: { 'memory.facts': { fact: factTrimmed, timestamp: new Date(), conversationId } },
+                    $set: { updatedAt: new Date() }
+                  }
+                );
+                console.log(`✅ Fact saved`);
+                toolResult = "Fact saved successfully";
+              }
+            } catch (error) {
+              console.error('Error saving fact:', error);
+              toolResult = `Error: ${error.message}`;
+            }
+          }
+          
+          // SAVE SUMMARY - no result needed, but acknowledge
+          else if (toolCall.function.name === "save_summary") {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const { summary } = args;
+              const now = new Date();
+              const timestamp = now.toLocaleString('de-DE', { 
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+              });
+
+              console.log(`📝 Saving summary: "${summary.substring(0, 80)}..."`);
+
+              const personas = collections.personas();
+              await personas.updateOne(
                 { _id: new ObjectId(personaId) },
                 {
                   $set: { 
-                    'memory.currentSummary': summaryEntry,
-                    updatedAt: new Date() 
+                    'memory.currentSummary': {
+                      summary: `[${timestamp}] ${summary.trim()}`,
+                      timestamp: now,
+                      conversationId
+                    },
+                    updatedAt: now 
                   }
                 }
-            );
-
-            console.log(`✅ Summary saved (replaced previous)`);
-          } catch (error) {
-            console.error('Error saving summary:', error);
-          }
-        }
-
-        // LEGACY: save_memory (for backward compatibility)
-        if (toolCall.function.name === "save_memory") {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { fact } = args;
-            const factTrimmed = fact.trim();
-
-            console.log(`💾 AI saving memory (legacy): "${factTrimmed.substring(0, 80)}..."`);
-
-            const personas = collections.personas();
-            
-            // Check for duplicates first
-            const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
-            const existingFacts = currentPersona?.memory?.autoFacts || [];
-            
-            const isDuplicate = existingFacts.some(existing => {
-              const existingFact = existing.fact || '';
-              if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) {
-                return true;
-              }
-              const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
-              const newWords = factTrimmed.toLowerCase().split(/\s+/);
-              const matchCount = newWords.filter(w => existingWords.has(w)).length;
-              return (matchCount / Math.max(newWords.length, 1)) > 0.8;
-            });
-
-            if (isDuplicate) {
-              console.log(`⏭️ Memory already exists, skipping duplicate`);
-            } else {
-              const autoFact = {
-                fact: factTrimmed,
-                timestamp: new Date(),
-                conversationId: conversationId || null
-              };
-
-              await personas.updateOne(
-                  { _id: new ObjectId(personaId) },
-                  {
-                    $push: { 'memory.autoFacts': autoFact },
-                    $set: { updatedAt: new Date() }
-                  }
               );
-
-              console.log(`✅ Memory saved (new fact)`);
+              console.log(`✅ Summary saved`);
+              toolResult = "Summary saved (replaced previous)";
+            } catch (error) {
+              console.error('Error saving summary:', error);
+              toolResult = `Error: ${error.message}`;
             }
-          } catch (error) {
-            console.error('Error saving memory:', error);
           }
-        }
-
-        // SEND NOTIFICATION
-        if (toolCall.function.name === "send_notification") {
-          try {
-            let args;
+          
+          // SEND NOTIFICATION - no result needed
+          else if (toolCall.function.name === "send_notification") {
             try {
-              args = JSON.parse(toolCall.function.arguments);
-            } catch (parseError) {
-              console.error(`❌ Error parsing notification arguments:`, parseError.message);
-              console.error(`📄 Raw arguments: "${toolCall.function.arguments?.substring(0, 200)}..."`);
-              // Try to salvage the message
-              const msgMatch = toolCall.function.arguments?.match(/"message"\s*:\s*"([^"]+)/);
-              if (msgMatch) {
-                args = { message: msgMatch[1], urgency: 'low' };
-                console.log(`🔧 Salvaged notification message from malformed JSON`);
-              } else {
-                throw new Error('Could not parse notification');
-              }
-            }
-            
-            const { message, urgency } = args;
-
-            console.log(`💌 AI sending notification: "${message?.substring(0, 50)}..." (${urgency || 'low'})`);
-
-            const notifications = collections.notifications();
-            const notification = {
-              userId: 'single_user',
-              personaId: personaId,
-              personaName: persona.name,
-              personaAvatar: persona.avatar || '🤖',
-              message: message,
-              urgency: urgency || 'low',
-              read: false,
-              createdAt: new Date()
-            };
-
-            await notifications.insertOne(notification);
-
-            console.log(`✅ Notification sent`);
-          } catch (error) {
-            console.error('Error sending notification:', error);
-          }
-        }
-
-        // LOAD KNOWLEDGE BY TITLE
-        if (toolCall.function.name === "load_knowledge_by_title") {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { titles } = args;
-
-            console.log(`📚 AI loading knowledge: ${titles.join(', ')}`);
-
-            const kb = collections.knowledgeBase();
-            const files = await kb.find({
-              title: {
-                $in: titles.map(t => new RegExp(`^${t}$`, 'i'))
-              }
-            }).toArray();
-
-            console.log(`✅ Loaded ${files.length} files`);
-
-            // Note: Files are loaded but we don't send them back in this request
-            // They would be used in a follow-up turn or the AI notes they're now available
-          } catch (error) {
-            console.error('Error loading knowledge:', error);
-          }
-        }
-
-        // LIST KNOWLEDGE FILES
-        if (toolCall.function.name === "list_knowledge_files") {
-          try {
-            console.log(`📚 AI listing all knowledge files`);
-
-            const kb = collections.knowledgeBase();
-            const files = await kb
-                .find({})
-                .project({ title: 1, size: 1, uploadedAt: 1 })
-                .toArray();
-
-            console.log(`✅ Listed ${files.length} files`);
-          } catch (error) {
-            console.error('Error listing knowledge:', error);
-          }
-        }
-
-        // GET LOOP STATE
-        if (toolCall.function.name === "get_loop_state") {
-          try {
-            console.log(`🔍 AI checking Loop's state`);
-
-            const state = collections.levoState();
-            const currentState = await state.findOne({ type: 'global' });
-
-            console.log(`✅ State retrieved:`, {
-              lastActive: currentState?.loop?.lastActivity,
-              isOnline: currentState?.loop?.isOnline,
-              activeFields: currentState?.levo?.activeFields?.length || 0
-            });
-
-            // State is retrieved and will be available in next model turn
-          } catch (error) {
-            console.error('Error getting loop state:', error);
-          }
-        }
-
-        // SEARCH KNOWLEDGE (NEW)
-        if (toolCall.function.name === "search_knowledge") {
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { query, files, maxResults = 5 } = args;
-            const limit = Math.min(maxResults, 10);
-
-            console.log(`🔍 AI searching knowledge for: "${query}"`);
-
-            const kb = collections.knowledgeBase();
-            
-            // Build query - optionally filter by file titles
-            let dbQuery = {};
-            if (files && files.length > 0) {
-              dbQuery.title = { $in: files.map(t => new RegExp(t, 'i')) };
-            }
-
-            const allFiles = await kb.find(dbQuery).toArray();
-            const results = [];
-
-            for (const file of allFiles) {
-              if (!file.content) continue;
-              
-              const lines = file.content.split('\n');
-              const queryLower = query.toLowerCase();
-
-              for (let i = 0; i < lines.length; i++) {
-                if (lines[i].toLowerCase().includes(queryLower)) {
-                  // Get context: 2 lines before and after
-                  const contextStart = Math.max(0, i - 2);
-                  const contextEnd = Math.min(lines.length - 1, i + 2);
-                  const context = lines.slice(contextStart, contextEnd + 1).join('\n');
-
-                  results.push({
-                    file: file.title,
-                    line: i + 1,
-                    context: context.substring(0, 500) // Limit context size
-                  });
-
-                  if (results.length >= limit) break;
+              let args;
+              try {
+                args = JSON.parse(toolCall.function.arguments);
+              } catch (parseError) {
+                const msgMatch = toolCall.function.arguments?.match(/"message"\s*:\s*"([^"]+)/);
+                if (msgMatch) {
+                  args = { message: msgMatch[1], urgency: 'low' };
+                } else {
+                  throw new Error('Could not parse notification');
                 }
               }
-              if (results.length >= limit) break;
+              
+              const { message, urgency } = args;
+              console.log(`💌 Sending notification: "${message?.substring(0, 50)}..."`);
+
+              const notifications = collections.notifications();
+              await notifications.insertOne({
+                userId: 'single_user',
+                personaId,
+                personaName: persona.name,
+                personaAvatar: persona.avatar || '🤖',
+                message,
+                urgency: urgency || 'low',
+                read: false,
+                createdAt: new Date()
+              });
+              console.log(`✅ Notification sent`);
+              toolResult = "Notification sent";
+            } catch (error) {
+              console.error('Error sending notification:', error);
+              toolResult = `Error: ${error.message}`;
             }
-
-            console.log(`✅ Found ${results.length} results for "${query}"`);
-
-            // Store results in a way the AI can access them
-            // We'll add them to the response
-            if (!aiMessage.searchResults) aiMessage.searchResults = [];
-            aiMessage.searchResults.push({
-              query: query,
-              results: results
+          }
+          
+          // Other tools - just acknowledge
+          else {
+            toolResult = "Tool executed";
+          }
+          
+          // Add tool result to conversation
+          if (toolResult) {
+            currentMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: toolResult
             });
-
-          } catch (error) {
-            console.error('Error searching knowledge:', error);
           }
         }
+        
+        // Continue loop to get AI's response to tool results
+        continue;
+      }
+      
+      // No tool calls - this is the final response
+      finalAiMessage = aiMessage;
+      break;
+    }
 
+    // Handle legacy save_memory if still used (backward compatibility)
+    if (allToolCalls.some(tc => tc.function.name === 'save_memory')) {
+      for (const toolCall of allToolCalls.filter(tc => tc.function.name === 'save_memory')) {
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          const { fact } = args;
+          const factTrimmed = fact.trim();
+
+          console.log(`💾 Legacy save_memory: "${factTrimmed.substring(0, 80)}..."`);
+
+          const personas = collections.personas();
+          const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+          const existingFacts = currentPersona?.memory?.autoFacts || [];
+          
+          const isDuplicate = existingFacts.some(existing => {
+            const existingFact = existing.fact || '';
+            if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) return true;
+            const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+            const newWords = factTrimmed.toLowerCase().split(/\s+/);
+            const matchCount = newWords.filter(w => existingWords.has(w)).length;
+            return (matchCount / Math.max(newWords.length, 1)) > 0.8;
+          });
+
+          if (!isDuplicate) {
+            await personas.updateOne(
+              { _id: new ObjectId(personaId) },
+              {
+                $push: { 'memory.autoFacts': { fact: factTrimmed, timestamp: new Date(), conversationId } },
+                $set: { updatedAt: new Date() }
+              }
+            );
+            console.log(`✅ Legacy memory saved`);
+          }
+        } catch (error) {
+          console.error('Error in legacy save_memory:', error);
+        }
       }
     }
 
     res.json({
-      message: aiMessage.content,
-      usage: data.usage,
-      toolCalls: aiMessage.tool_calls || [],
-      searchResults: aiMessage.searchResults || []
+      message: finalAiMessage?.content || '',
+      usage: totalUsage,
+      toolCalls: allToolCalls,
+      searchResults: searchResultsForFrontend
     });
 
   } catch (error) {

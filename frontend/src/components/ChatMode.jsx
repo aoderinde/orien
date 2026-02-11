@@ -273,6 +273,38 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
             }
           }
 
+          // Show notification for save_fact
+          if (toolCall.function.name === 'save_fact') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const fact = args.fact;
+              newMessages.push({
+                role: 'system',
+                content: `💾 Fact gespeichert: "${fact.substring(0, 80)}${fact.length > 80 ? '...' : ''}"`,
+                timestamp: new Date().toISOString(),
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+
+          // Show notification for save_summary
+          if (toolCall.function.name === 'save_summary') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const summary = args.summary;
+              newMessages.push({
+                role: 'system',
+                content: `📝 Summary aktualisiert: "${summary.substring(0, 60)}${summary.length > 60 ? '...' : ''}"`,
+                timestamp: new Date().toISOString(),
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+
           // Show notification for send_notification
           if (toolCall.function.name === 'send_notification') {
             try {
@@ -297,6 +329,23 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               newMessages.push({
                 role: 'system',
                 content: `📚 Knowledge geladen: ${titles.join(', ')}`,
+                timestamp: new Date().toISOString(),
+                type: 'tool_notification'
+              });
+            } catch (e) {
+              console.error('Error parsing tool call:', e);
+            }
+          }
+
+          // Show notification for search_knowledge
+          if (toolCall.function.name === 'search_knowledge') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const query = args.query;
+              const resultCount = response.data.searchResults?.[0]?.results?.length || 0;
+              newMessages.push({
+                role: 'system',
+                content: `🔍 Suche: "${query}" → ${resultCount} Treffer`,
                 timestamp: new Date().toISOString(),
                 type: 'tool_notification'
               });
