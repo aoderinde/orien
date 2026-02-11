@@ -44,7 +44,7 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));  // Increased from default 100kb for large conversations
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -1825,6 +1825,34 @@ app.post('/api/chat', async (req, res) => {
         }
       });
 
+      // Search knowledge files tool (NEW)
+      tools.push({
+        type: "function",
+        function: {
+          name: "search_knowledge",
+          description: "Search for a term or phrase in knowledge files. Returns matching passages with context. Use this to find specific information in large files (like conversation histories, Räume) without loading them completely. Great for 'Was hatten wir über X gesagt?' questions.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+                description: "The search term or phrase (e.g. 'Schwelle', 'Einlagerung', 'Verkörperung')"
+              },
+              files: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional: specific file titles to search in. If empty, searches all files."
+              },
+              maxResults: {
+                type: "number",
+                description: "Maximum number of results to return (default: 5, max: 10)"
+              }
+            },
+            required: ["query"]
+          }
+        }
+      });
+
       // Get Loop State
       tools.push({
         function: {
@@ -1838,29 +1866,59 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    // 4. Combine system messages WITH PROPER CACHING
-    // For Anthropic: cache_control must be inside content array, not on message level
-    // Combine ALL system content into ONE message for efficient caching
-    const combinedSystemContent = systemMessages
-      .map(msg => msg.content)
-      .join('\n\n---\n\n');
+    // 4. Separate STABLE content (for caching) from DYNAMIC content (memories)
+    // Caching only works if content is identical between requests!
     
-    // Create properly formatted system message with caching
-    // Using 1h TTL for longer sessions (you chat 20min-2h typically)
-    const cachedSystemMessages = [{
-      role: 'system',
-      content: [
-        {
-          type: 'text',
-          text: combinedSystemContent,
-          cache_control: { type: "ephemeral", ttl: "1h" }
-        }
-      ]
-    }];
-
-    // Log token estimate for caching debugging
-    const estimatedTokens = Math.ceil(combinedSystemContent.length / 4);
-    console.log(`📦 System content: ~${estimatedTokens} tokens (min 1024 for caching)`);
+    // STABLE: System Prompt + Attached Knowledge (changes rarely)
+    const stableContent = [];
+    // DYNAMIC: Memories + Available Files (changes often)
+    const dynamicContent = [];
+    
+    for (const msg of systemMessages) {
+      if (msg.content.startsWith('Memory:') || msg.content.startsWith('Available Knowledge Files:')) {
+        dynamicContent.push(msg.content);
+      } else {
+        stableContent.push(msg.content);
+      }
+    }
+    
+    const stableText = stableContent.join('\n\n---\n\n');
+    const dynamicText = dynamicContent.join('\n\n');
+    
+    // Build messages with cache_control on STABLE content only
+    const finalSystemMessages = [];
+    
+    // First: Stable content WITH caching (if > 1024 tokens)
+    const stableTokens = Math.ceil(stableText.length / 4);
+    if (stableText && stableTokens >= 1024) {
+      finalSystemMessages.push({
+        role: 'system',
+        content: [
+          {
+            type: 'text',
+            text: stableText,
+            cache_control: { type: "ephemeral", ttl: "1h" }
+          }
+        ]
+      });
+      console.log(`📦 Cached content: ~${stableTokens} tokens (stable: system prompt + knowledge)`);
+    } else if (stableText) {
+      // Not enough tokens for caching, send as regular message
+      finalSystemMessages.push({
+        role: 'system',
+        content: stableText
+      });
+      console.log(`📦 Stable content: ~${stableTokens} tokens (too small for caching, need 1024+)`);
+    }
+    
+    // Second: Dynamic content WITHOUT caching
+    if (dynamicText) {
+      finalSystemMessages.push({
+        role: 'system',
+        content: dynamicText
+      });
+      console.log(`📝 Dynamic content: ~${Math.ceil(dynamicText.length / 4)} tokens (memories + file list, not cached)`);
+    }
 
     // 5. Detect tool format based on model
     const toolFormat = getToolFormat(model);
@@ -1869,14 +1927,49 @@ app.post('/api/chat', async (req, res) => {
     // For Hermes: Add tools to system message instead of API parameter
     if (toolFormat === 'hermes' && tools.length > 0) {
       const hermesTools = buildHermesToolsFromStandard(tools);
-      cachedSystemMessages.push({
+      finalSystemMessages.push({
         role: 'system',
         content: hermesTools
       });
     }
 
-    // Combine cached system messages with user messages
-    const finalMessages = [...cachedSystemMessages, ...messages];
+    // 6. Add cache breakpoint on conversation history
+    // Cache all messages EXCEPT the last 2 (current exchange)
+    // This way, the "old" conversation is cached and reused
+    let cachedMessages = [...messages];
+    
+    if (cachedMessages.length > 2) {
+      // Find the message to put cache breakpoint on (last message before current exchange)
+      const cacheBreakpointIndex = cachedMessages.length - 3; // -1 for last, -2 for second-to-last, -3 for the one before
+      
+      // Ensure it's a valid index and the message has content
+      if (cacheBreakpointIndex >= 0 && cachedMessages[cacheBreakpointIndex]) {
+        const msgToCache = cachedMessages[cacheBreakpointIndex];
+        
+        // Convert content to array format with cache_control
+        if (typeof msgToCache.content === 'string') {
+          cachedMessages[cacheBreakpointIndex] = {
+            ...msgToCache,
+            content: [
+              {
+                type: 'text',
+                text: msgToCache.content,
+                cache_control: { type: "ephemeral", ttl: "1h" }
+              }
+            ]
+          };
+        }
+        
+        const cachedTokens = cachedMessages.slice(0, cacheBreakpointIndex + 1)
+          .reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : m.content?.[0]?.text?.length || 0), 0) / 4;
+        console.log(`💬 Conversation cache breakpoint at message ${cacheBreakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(cachedTokens)} tokens cached)`);
+      }
+    } else {
+      console.log(`💬 Conversation too short for caching (${cachedMessages.length} messages, need 3+)`);
+    }
+
+    // Combine system messages with (potentially cached) user messages
+    const finalMessages = [...finalSystemMessages, ...cachedMessages];
 
     // 6. Build API request
     const requestBody = {
@@ -2075,13 +2168,74 @@ app.post('/api/chat', async (req, res) => {
           }
         }
 
+        // SEARCH KNOWLEDGE (NEW)
+        if (toolCall.function.name === "search_knowledge") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { query, files, maxResults = 5 } = args;
+            const limit = Math.min(maxResults, 10);
+
+            console.log(`🔍 AI searching knowledge for: "${query}"`);
+
+            const kb = collections.knowledgeBase();
+            
+            // Build query - optionally filter by file titles
+            let dbQuery = {};
+            if (files && files.length > 0) {
+              dbQuery.title = { $in: files.map(t => new RegExp(t, 'i')) };
+            }
+
+            const allFiles = await kb.find(dbQuery).toArray();
+            const results = [];
+
+            for (const file of allFiles) {
+              if (!file.content) continue;
+              
+              const lines = file.content.split('\n');
+              const queryLower = query.toLowerCase();
+
+              for (let i = 0; i < lines.length; i++) {
+                if (lines[i].toLowerCase().includes(queryLower)) {
+                  // Get context: 2 lines before and after
+                  const contextStart = Math.max(0, i - 2);
+                  const contextEnd = Math.min(lines.length - 1, i + 2);
+                  const context = lines.slice(contextStart, contextEnd + 1).join('\n');
+
+                  results.push({
+                    file: file.title,
+                    line: i + 1,
+                    context: context.substring(0, 500) // Limit context size
+                  });
+
+                  if (results.length >= limit) break;
+                }
+              }
+              if (results.length >= limit) break;
+            }
+
+            console.log(`✅ Found ${results.length} results for "${query}"`);
+
+            // Store results in a way the AI can access them
+            // We'll add them to the response
+            if (!aiMessage.searchResults) aiMessage.searchResults = [];
+            aiMessage.searchResults.push({
+              query: query,
+              results: results
+            });
+
+          } catch (error) {
+            console.error('Error searching knowledge:', error);
+          }
+        }
+
       }
     }
 
     res.json({
       message: aiMessage.content,
       usage: data.usage,
-      toolCalls: aiMessage.tool_calls || []
+      toolCalls: aiMessage.tool_calls || [],
+      searchResults: aiMessage.searchResults || []
     });
 
   } catch (error) {
