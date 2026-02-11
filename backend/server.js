@@ -2299,8 +2299,8 @@ app.post('/api/chat', async (req, res) => {
             toolResult = "Tool executed";
           }
           
-          // Add tool result to conversation
-          if (toolResult) {
+          // Add tool result to conversation (only for tools that need a follow-up)
+          if (toolResult && toolCall.function.name === "search_knowledge") {
             currentMessages.push({
               role: 'tool',
               tool_call_id: toolCall.id,
@@ -2309,8 +2309,19 @@ app.post('/api/chat', async (req, res) => {
           }
         }
         
-        // Continue loop to get AI's response to tool results
-        continue;
+        // Check if we need a follow-up call
+        // Only search_knowledge needs the AI to process results
+        const needsFollowUp = aiMessage.tool_calls.some(tc => tc.function.name === "search_knowledge");
+        
+        if (needsFollowUp) {
+          console.log(`🔄 Continuing loop for search_knowledge results`);
+          continue;
+        } else {
+          // Fire-and-forget tools: use the current message as final
+          console.log(`✅ Fire-and-forget tools executed, using current response`);
+          finalAiMessage = aiMessage;
+          break;
+        }
       }
       
       // No tool calls - this is the final response
