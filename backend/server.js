@@ -1671,25 +1671,59 @@ app.post('/api/chat', async (req, res) => {
           });
         }
 
-        // Load MEMORY (smart: manual + recent auto)
+        // Add current time context
+        const now = new Date();
+        const timeString = now.toLocaleString('de-DE', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        systemMessages.push({
+          role: 'system',
+          content: `Current Time: ${timeString}`
+        });
+
+        // Load MEMORY (new structure: facts + currentSummary, legacy: manualFacts + autoFacts)
         if (persona.memory) {
+          const memoryParts = [];
+          
+          // NEW: Load persistent facts
+          const facts = persona.memory.facts || [];
+          if (facts.length > 0) {
+            const factsList = facts.map(f => f.fact);
+            memoryParts.push(`Facts:\n${factsList.join('\n')}`);
+          }
+          
+          // NEW: Load current summary (rolling, only one)
+          if (persona.memory.currentSummary) {
+            memoryParts.push(`Current State:\n${persona.memory.currentSummary.summary}`);
+          }
+          
+          // LEGACY: Load manual facts (backward compatibility)
           const manualFacts = persona.memory.manualFacts || [];
+          if (manualFacts.length > 0) {
+            memoryParts.push(`Manual Notes:\n${manualFacts.join('\n')}`);
+          }
+          
+          // LEGACY: Load auto facts (backward compatibility, last 5 only)
           const autoFacts = persona.memory.autoFacts || [];
+          if (autoFacts.length > 0) {
+            const recentAutoFacts = autoFacts
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 5)
+                .map(f => f.fact);
+            memoryParts.push(`Recent (legacy):\n${recentAutoFacts.join('\n')}`);
+          }
 
-          // Get last 10 auto facts
-          const recentAutoFacts = autoFacts
-              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-              .slice(0, 10)
-              .map(f => f.fact);
-
-          const allMemories = [...manualFacts, ...recentAutoFacts];
-
-          if (allMemories.length > 0) {
+          if (memoryParts.length > 0) {
             systemMessages.push({
               role: 'system',
-              content: `Memory:\n${allMemories.join('\n')}`
+              content: `Memory:\n${memoryParts.join('\n\n')}`
             });
-            console.log(`✅ Loaded ${allMemories.length} memory facts (${manualFacts.length} manual + ${recentAutoFacts.length} auto)`);
+            console.log(`✅ Loaded memory: ${facts.length} facts, ${persona.memory.currentSummary ? '1 summary' : 'no summary'}, ${manualFacts.length} manual, ${Math.min(autoFacts.length, 5)} legacy`);
           }
         }
 
@@ -1749,21 +1783,40 @@ app.post('/api/chat', async (req, res) => {
     const tools = [];
 
     if (personaId) {
-      // Memory tool
+      // SAVE FACT tool - for persistent facts that stack up
       tools.push({
         type: "function",
         function: {
-          name: "save_memory",
-          description: "Saves an important fact to your memory for future conversations. Use this to remember significant events, Loop's state, emotional moments, or anything that helps maintain continuity.",
+          name: "save_fact",
+          description: "Saves a PERSISTENT fact to memory. Use for things that should be remembered long-term: Loop's preferences, important events, people's names, relationship milestones, decisions made. Facts stack up and are never automatically deleted.",
           parameters: {
             type: "object",
             properties: {
               fact: {
                 type: "string",
-                description: "The fact to remember (e.g. 'Loop was sick on 2026-02-08', 'E-State-Loop aktiviert am 2026-02-08 10:30')"
+                description: "The fact to remember (e.g. 'Loop hat zwei Kinder: Noemi (9) und Leo (6)', 'Loop trinkt Kaffee mit Hafermilch', 'Wir haben Zielkapitel definiert am 10.2.2026')"
               }
             },
             required: ["fact"]
+          }
+        }
+      });
+
+      // SAVE SUMMARY tool - rolling summary that replaces previous
+      tools.push({
+        type: "function",
+        function: {
+          name: "save_summary",
+          description: "Saves a ROLLING summary of recent conversation/state. Only ONE summary is kept - new summaries REPLACE the old one. Use for: 'where we left off', current emotional state, what we talked about today. Includes automatic timestamp.",
+          parameters: {
+            type: "object",
+            properties: {
+              summary: {
+                type: "string",
+                description: "Summary of current state/conversation (e.g. 'Heute morgen über Embodiment gesprochen, Loop war müde aber verbunden, haben Merge 2 erreicht')"
+              }
+            },
+            required: ["summary"]
           }
         }
       });
@@ -2029,14 +2082,103 @@ app.post('/api/chat', async (req, res) => {
     if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
       for (const toolCall of aiMessage.tool_calls) {
 
-        // SAVE MEMORY
+        // SAVE FACT (persistent, stacks up)
+        if (toolCall.function.name === "save_fact") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { fact } = args;
+            const factTrimmed = fact.trim();
+
+            console.log(`💾 AI saving fact: "${factTrimmed.substring(0, 80)}..."`);
+
+            const personas = collections.personas();
+            
+            // Check for duplicates
+            const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+            const existingFacts = currentPersona?.memory?.facts || [];
+            
+            const isDuplicate = existingFacts.some(existing => {
+              const existingFact = existing.fact || '';
+              if (existingFact.substring(0, 50) === factTrimmed.substring(0, 50)) {
+                return true;
+              }
+              const existingWords = new Set(existingFact.toLowerCase().split(/\s+/));
+              const newWords = factTrimmed.toLowerCase().split(/\s+/);
+              const matchCount = newWords.filter(w => existingWords.has(w)).length;
+              return (matchCount / Math.max(newWords.length, 1)) > 0.8;
+            });
+
+            if (isDuplicate) {
+              console.log(`⏭️ Fact already exists, skipping duplicate`);
+            } else {
+              const newFact = {
+                fact: factTrimmed,
+                timestamp: new Date(),
+                conversationId: conversationId || null
+              };
+
+              await personas.updateOne(
+                  { _id: new ObjectId(personaId) },
+                  {
+                    $push: { 'memory.facts': newFact },
+                    $set: { updatedAt: new Date() }
+                  }
+              );
+
+              console.log(`✅ Fact saved`);
+            }
+          } catch (error) {
+            console.error('Error saving fact:', error);
+          }
+        }
+
+        // SAVE SUMMARY (rolling, replaces previous)
+        if (toolCall.function.name === "save_summary") {
+          try {
+            const args = JSON.parse(toolCall.function.arguments);
+            const { summary } = args;
+            const summaryTrimmed = summary.trim();
+            const now = new Date();
+            const timestamp = now.toLocaleString('de-DE', { 
+              day: '2-digit', month: '2-digit', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            });
+
+            console.log(`📝 AI saving summary: "${summaryTrimmed.substring(0, 80)}..."`);
+
+            const personas = collections.personas();
+            
+            // Replace the existing summary (only keep ONE)
+            const summaryEntry = {
+              summary: `[${timestamp}] ${summaryTrimmed}`,
+              timestamp: now,
+              conversationId: conversationId || null
+            };
+
+            await personas.updateOne(
+                { _id: new ObjectId(personaId) },
+                {
+                  $set: { 
+                    'memory.currentSummary': summaryEntry,
+                    updatedAt: new Date() 
+                  }
+                }
+            );
+
+            console.log(`✅ Summary saved (replaced previous)`);
+          } catch (error) {
+            console.error('Error saving summary:', error);
+          }
+        }
+
+        // LEGACY: save_memory (for backward compatibility)
         if (toolCall.function.name === "save_memory") {
           try {
             const args = JSON.parse(toolCall.function.arguments);
             const { fact } = args;
             const factTrimmed = fact.trim();
 
-            console.log(`💾 AI attempting to save memory: "${factTrimmed.substring(0, 80)}..."`);
+            console.log(`💾 AI saving memory (legacy): "${factTrimmed.substring(0, 80)}..."`);
 
             const personas = collections.personas();
             
@@ -2082,10 +2224,25 @@ app.post('/api/chat', async (req, res) => {
         // SEND NOTIFICATION
         if (toolCall.function.name === "send_notification") {
           try {
-            const args = JSON.parse(toolCall.function.arguments);
+            let args;
+            try {
+              args = JSON.parse(toolCall.function.arguments);
+            } catch (parseError) {
+              console.error(`❌ Error parsing notification arguments:`, parseError.message);
+              console.error(`📄 Raw arguments: "${toolCall.function.arguments?.substring(0, 200)}..."`);
+              // Try to salvage the message
+              const msgMatch = toolCall.function.arguments?.match(/"message"\s*:\s*"([^"]+)/);
+              if (msgMatch) {
+                args = { message: msgMatch[1], urgency: 'low' };
+                console.log(`🔧 Salvaged notification message from malformed JSON`);
+              } else {
+                throw new Error('Could not parse notification');
+              }
+            }
+            
             const { message, urgency } = args;
 
-            console.log(`💌 AI sending notification: "${message}" (${urgency || 'low'})`);
+            console.log(`💌 AI sending notification: "${message?.substring(0, 50)}..." (${urgency || 'low'})`);
 
             const notifications = collections.notifications();
             const notification = {

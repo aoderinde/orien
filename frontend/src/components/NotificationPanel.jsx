@@ -40,6 +40,8 @@ function NotificationPanel({ isOpen, onClose }) {
     try {
       await axios.post(`${API_URL}/api/notifications/read-all`);
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      // Notify the bell to refresh
+      window.dispatchEvent(new Event('notifications-updated'));
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
@@ -54,6 +56,8 @@ function NotificationPanel({ isOpen, onClose }) {
     try {
       await axios.delete(`${API_URL}/api/notifications/${id}`);
       setNotifications(prev => prev.filter(n => n._id !== id));
+      // Notify the bell to refresh
+      window.dispatchEvent(new Event('notifications-updated'));
     } catch (error) {
       console.error('Error deleting notification:', error);
     }
