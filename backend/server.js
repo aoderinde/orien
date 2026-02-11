@@ -1941,9 +1941,16 @@ app.post('/api/chat', async (req, res) => {
     // Build messages with cache_control on STABLE content only
     const finalSystemMessages = [];
     
-    // First: Stable content WITH caching (if > 1024 tokens)
+    // Determine minimum tokens for caching based on model
+    // Opus 4.5 and Haiku 4.5: 4096 tokens
+    // Sonnet 4.5, Opus 4, Sonnet 4: 1024 tokens
+    const isOpus45OrHaiku45 = model.includes('opus-4.5') || model.includes('opus-4-5') || model.includes('opus-4.6') || model.includes('opus-4-6') ||
+        model.includes('haiku-4.5') || model.includes('haiku-4-5');
+    const minCacheTokens = isOpus45OrHaiku45 ? 4096 : 1024;
+    
+    // First: Stable content WITH caching (if meets minimum)
     const stableTokens = Math.ceil(stableText.length / 4);
-    if (stableText && stableTokens >= 1024) {
+    if (stableText && stableTokens >= minCacheTokens) {
       finalSystemMessages.push({
         role: 'system',
         content: [
@@ -1961,7 +1968,7 @@ app.post('/api/chat', async (req, res) => {
         role: 'system',
         content: stableText
       });
-      console.log(`📦 Stable content: ~${stableTokens} tokens (too small for caching, need 1024+)`);
+      console.log(`📦 Stable content: ~${stableTokens} tokens (too small for caching, need ${minCacheTokens}+ for ${model})`);
     }
     
     // Second: Dynamic content WITHOUT caching
@@ -1995,8 +2002,12 @@ app.post('/api/chat', async (req, res) => {
       // Find the message to put cache breakpoint on (last message before current exchange)
       const cacheBreakpointIndex = cachedMessages.length - 3; // -1 for last, -2 for second-to-last, -3 for the one before
       
-      // Ensure it's a valid index and the message has content
-      if (cacheBreakpointIndex >= 0 && cachedMessages[cacheBreakpointIndex]) {
+      // Calculate tokens up to breakpoint
+      const cachedTokens = cachedMessages.slice(0, cacheBreakpointIndex + 1)
+        .reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : m.content?.[0]?.text?.length || 0), 0) / 4;
+      
+      // Only add cache_control if we meet minimum token requirement
+      if (cacheBreakpointIndex >= 0 && cachedMessages[cacheBreakpointIndex] && cachedTokens >= minCacheTokens) {
         const msgToCache = cachedMessages[cacheBreakpointIndex];
         
         // Convert content to array format with cache_control
@@ -2013,9 +2024,9 @@ app.post('/api/chat', async (req, res) => {
           };
         }
         
-        const cachedTokens = cachedMessages.slice(0, cacheBreakpointIndex + 1)
-          .reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : m.content?.[0]?.text?.length || 0), 0) / 4;
         console.log(`💬 Conversation cache breakpoint at message ${cacheBreakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(cachedTokens)} tokens cached)`);
+      } else if (cachedTokens < minCacheTokens) {
+        console.log(`💬 Conversation too small for caching (~${Math.ceil(cachedTokens)} tokens, need ${minCacheTokens}+ for ${model})`);
       }
     } else {
       console.log(`💬 Conversation too short for caching (${cachedMessages.length} messages, need 3+)`);
