@@ -172,6 +172,45 @@ router.post('/:id/memory/facts', async (req, res) => {
   }
 });
 
+// UPDATE FACT
+router.patch('/:id/memory/facts/:index', async (req, res) => {
+  try {
+    const {ObjectId} = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+    const {text} = req.body;
+
+    if (!text) {
+      return res.status(400).json({error: 'Text is required'});
+    }
+
+    const persona = await personas.findOne({_id: new ObjectId(req.params.id)});
+
+    if (!persona) {
+      return res.status(404).json({error: 'Persona not found'});
+    }
+
+    if (persona.memory?.facts && persona.memory.facts[index] !== undefined) {
+      persona.memory.facts[index].fact = text.trim();
+
+      await personas.updateOne(
+          {_id: new ObjectId(req.params.id)},
+          {
+            $set: {
+              'memory.facts': persona.memory.facts,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({success: true});
+  } catch (error) {
+    console.error('Error updating fact:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
 // DELETE FACT
 router.delete('/:id/memory/facts/:index', async (req, res) => {
   try {
@@ -236,6 +275,45 @@ router.delete('/:id/memory/summaries/:index', async (req, res) => {
     res.json({success: true});
   } catch (error) {
     console.error('Error removing summary:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
+// UPDATE SUMMARY
+router.patch('/:id/memory/summarys/:index', async (req, res) => {
+  try {
+    const {ObjectId} = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+    const {text} = req.body;
+
+    if (!text) {
+      return res.status(400).json({error: 'Text is required'});
+    }
+
+    const persona = await personas.findOne({_id: new ObjectId(req.params.id)});
+
+    if (!persona) {
+      return res.status(404).json({error: 'Persona not found'});
+    }
+
+    if (persona.memory?.summaries && persona.memory.summaries[index] !== undefined) {
+      persona.memory.summaries[index].text = text.trim();
+
+      await personas.updateOne(
+          {_id: new ObjectId(req.params.id)},
+          {
+            $set: {
+              'memory.summaries': persona.memory.summaries,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({success: true});
+  } catch (error) {
+    console.error('Error updating summary:', error);
     res.status(500).json({error: error.message});
   }
 });
