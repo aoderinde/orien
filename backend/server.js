@@ -1709,20 +1709,50 @@ app.post('/api/chat', async (req, res) => {
         // NOTE: Time is now added to the last user message (after cache setup)
         // to preserve cache hits. See "Add current time to the last user message" below.
 
-        // Load MEMORY (new structure: facts + currentSummary, legacy: manualFacts + autoFacts)
+        // Load MEMORY with caching support
+        // If we have a cached state, only load facts/summaries up to the cached IDs
+        // to keep the system content stable for cache hits
         if (persona.memory) {
           const memoryParts = [];
           
-          // Load persistent facts
-          const facts = persona.memory.facts || [];
+          // Check cache state for this conversation
+          const cacheKey = conversationId || 'default';
+          const convCacheState = cacheState.get(cacheKey);
+          const now = Date.now();
+          const ttlMs = CACHE_TTL_MINUTES * 60 * 1000;
+          const cacheValid = convCacheState && (now - convCacheState.timestamp) < ttlMs;
+          
+          // Load persistent facts (with cache cutoff if applicable)
+          const allFacts = persona.memory.facts || [];
+          let facts = allFacts;
+          
+          if (cacheValid && convCacheState.maxFactId !== undefined) {
+            // Only load facts up to the cached ID
+            facts = allFacts.filter(f => f.id && f.id <= convCacheState.maxFactId);
+            const newFactsCount = allFacts.length - facts.length;
+            if (newFactsCount > 0) {
+              console.log(`📦 Memory cache: using ${facts.length} facts (${newFactsCount} new ones excluded)`);
+            }
+          }
+          
           if (facts.length > 0) {
             const factsList = facts.map(f => f.fact);
             memoryParts.push(`Facts:\n${factsList.join('\n')}`);
           }
           
-          // Load summaries (new append-based system)
-          // Show last 5 summaries for context, with most recent first
-          const summaries = persona.memory.summaries || [];
+          // Load summaries (with cache cutoff if applicable)
+          const allSummaries = persona.memory.summaries || [];
+          let summaries = allSummaries;
+          
+          if (cacheValid && convCacheState.maxSummaryId !== undefined) {
+            // Only load summaries up to the cached ID
+            summaries = allSummaries.filter(s => s.id && s.id <= convCacheState.maxSummaryId);
+            const newSummariesCount = allSummaries.length - summaries.length;
+            if (newSummariesCount > 0) {
+              console.log(`📦 Memory cache: using ${summaries.length} summaries (${newSummariesCount} new ones excluded)`);
+            }
+          }
+          
           if (summaries.length > 0) {
             const recentSummaries = summaries
               .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
@@ -1732,7 +1762,7 @@ app.post('/api/chat', async (req, res) => {
           }
           
           // LEGACY: Load current summary (old single-summary system)
-          if (persona.memory.currentSummary && !summaries.length) {
+          if (persona.memory.currentSummary && !allSummaries.length) {
             memoryParts.push(`Current State:\n${persona.memory.currentSummary.summary}`);
           }
           
@@ -1759,6 +1789,10 @@ app.post('/api/chat', async (req, res) => {
             });
             console.log(`✅ Loaded memory: ${facts.length} facts, ${summaries.length} summaries, ${manualFacts.length} manual, ${Math.min(autoFacts.length, 5)} legacy`);
           }
+          
+          // Store current max IDs for later cache state update
+          persona._maxFactId = allFacts.reduce((max, f) => Math.max(max, f.id || 0), 0);
+          persona._maxSummaryId = allSummaries.reduce((max, s) => Math.max(max, s.id || 0), 0);
         }
 
         // Get list of available knowledge files (titles only)
@@ -2006,7 +2040,7 @@ app.post('/api/chat', async (req, res) => {
     let convCacheState = cacheState.get(cacheKey);
     
     // Check if messages have IDs (new system)
-    const hasIds = cachedMessages.some(m => m.id);
+    const hasIds = cachedMessages.some(m => m.id && typeof m.id === 'number');
     
     if (cachedMessages.length > minUncachedMessages && hasIds) {
       let breakpointIndex = -1;
@@ -2021,7 +2055,7 @@ app.post('/api/chat', async (req, res) => {
         if (breakpointIndex >= 0) {
           cacheHitExpected = true;
           const remainingSec = Math.ceil((ttlMs - (now - convCacheState.timestamp)) / 1000);
-          console.log(`♻️  Cache reuse: anchored to message ID ${cachedMessageId} (${remainingSec}s remaining)`);
+          console.log(`♻️  Cache reuse: anchored to message ID ${cachedMessageId}, facts≤${convCacheState.maxFactId}, summaries≤${convCacheState.maxSummaryId} (${remainingSec}s remaining)`);
         } else {
           console.log(`⚠️  Cached message ID ${convCacheState.messageId} not in current window, refreshing`);
         }
@@ -2034,12 +2068,18 @@ app.post('/api/chat', async (req, res) => {
         const anchorId = anchorMessage?.id;
         
         if (anchorId) {
+          // Store current max IDs for facts and summaries
+          const maxFactId = persona?._maxFactId || 0;
+          const maxSummaryId = persona?._maxSummaryId || 0;
+          
           convCacheState = {
             messageId: anchorId,
+            maxFactId: maxFactId,
+            maxSummaryId: maxSummaryId,
             timestamp: now
           };
           cacheState.set(cacheKey, convCacheState);
-          console.log(`🔄 Cache refresh: new anchor at message ID ${anchorId} (TTL: ${CACHE_TTL_MINUTES}min)`);
+          console.log(`🔄 Cache refresh: msg ID ${anchorId}, facts≤${maxFactId}, summaries≤${maxSummaryId} (TTL: ${CACHE_TTL_MINUTES}min)`);
         } else {
           console.log(`⚠️  Message at breakpoint has no ID, skipping cache`);
         }
@@ -2283,14 +2323,17 @@ app.post('/api/chat', async (req, res) => {
                   console.log(`⏭️ Fact already exists in DB, skipping`);
                   toolResult = "Fact already saved (duplicate)";
                 } else {
+                  // Get next fact ID
+                  const nextFactId = currentPersona?.memory?.nextFactId || existingFacts.length + 1;
+                  
                   await personas.updateOne(
                     { _id: new ObjectId(personaId) },
                     {
-                      $push: { 'memory.facts': { fact: factTrimmed, timestamp: new Date(), conversationId } },
-                      $set: { updatedAt: new Date() }
+                      $push: { 'memory.facts': { id: nextFactId, fact: factTrimmed, timestamp: new Date(), conversationId } },
+                      $set: { 'memory.nextFactId': nextFactId + 1, updatedAt: new Date() }
                     }
                   );
-                  console.log(`✅ Fact saved`);
+                  console.log(`✅ Fact saved (ID: ${nextFactId})`);
                   toolResult = "Fact saved successfully";
                 }
                 factsAlreadySaved.add(factKey);  // Mark as processed
@@ -2320,9 +2363,13 @@ app.post('/api/chat', async (req, res) => {
                 console.log(`📝 Appending summary: "${summary.substring(0, 80)}..."`);
 
                 const personas = collections.personas();
+                const currentPersona = await personas.findOne({ _id: new ObjectId(personaId) });
+                const existingSummaries = currentPersona?.memory?.summaries || [];
+                const nextSummaryId = currentPersona?.memory?.nextSummaryId || existingSummaries.length + 1;
                 
                 // Append to summaries array (grouped by conversationId)
                 const summaryEntry = {
+                  id: nextSummaryId,
                   text: `[${timestamp}] ${summary.trim()}`,
                   timestamp: now,
                   conversationId: conversationId || 'unknown'
@@ -2332,10 +2379,10 @@ app.post('/api/chat', async (req, res) => {
                   { _id: new ObjectId(personaId) },
                   {
                     $push: { 'memory.summaries': summaryEntry },
-                    $set: { updatedAt: now }
+                    $set: { 'memory.nextSummaryId': nextSummaryId + 1, updatedAt: now }
                   }
                 );
-                console.log(`✅ Summary appended`);
+                console.log(`✅ Summary appended (ID: ${nextSummaryId})`);
                 toolResult = "Summary appended to conversation history";
                 summaryAlreadySaved = true;  // Mark as done
               } catch (error) {
