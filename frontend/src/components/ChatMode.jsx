@@ -20,12 +20,22 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
   const [isSaving, setIsSaving] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const autoSaveTimeout = useRef(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState('');
   const conversationListRef = useRef(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
+
+  // Scroll functions
+  const scrollToTop = () => {
+    messagesContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
     document.body.classList.add('chat-mode-active');
@@ -484,7 +494,15 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
 
             {/* REMOVED: active-knowledge-bar (moved to sidebar) */}
 
-            <div className="chat-messages">
+            <div className="chat-messages" ref={messagesContainerRef}>
+              {/* Scroll buttons */}
+              {messages.length > 5 && (
+                <div className="scroll-buttons">
+                  <button onClick={scrollToTop} className="scroll-btn" title="Scroll to top">⬆️</button>
+                  <button onClick={scrollToBottom} className="scroll-btn" title="Scroll to bottom">⬇️</button>
+                </div>
+              )}
+              
               {messages.length === 0 && (
                   <div className="empty-state">
                     <h3>👋 Start chatting{currentPersona ? ` with ${currentPersona.name}` : ''}!</h3>
@@ -496,7 +514,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
                   <div key={idx} className={`chat-message ${msg.role} ${msg.isError ? 'error' : ''}`}>
                     <div className="message-header">
                   <span className="role">
-                    {msg.role === 'user' ? '👤 You' : `${currentPersona?.avatar || '🤖'} ${selectedModelInfo?.name || 'AI'}`}
+                    {msg.role === 'user' ? '👤 You' : `${currentPersona?.avatar || '🤖'} ${currentPersona?.name || selectedModelInfo?.name || 'AI'}`}
                   </span>
                       <span className="timestamp">
                     {new Date(msg.timestamp).toLocaleTimeString()}
@@ -511,7 +529,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               {isLoading && (
                   <div className="chat-message assistant loading">
                     <div className="message-header">
-                      <span className="role">{currentPersona?.avatar || '🤖'} {selectedModelInfo?.name}</span>
+                      <span className="role">{currentPersona?.avatar || '🤖'} {currentPersona?.name || selectedModelInfo?.name || 'AI'}</span>
                     </div>
                     <div className="message-content">
                   <span className="typing-indicator">

@@ -743,3 +743,59 @@ button:disabled {
         font-size: 1.1rem;
     }
 }
+
+/* Scroll buttons */
+.scroll-buttons {
+    position: sticky;
+    top: 10px;
+    z-index: 10;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 10px;
+    pointer-events: none;
+}
+
+.scroll-btn {
+    pointer-events: auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.scroll-btn:hover {
+    background: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: scale(1.1);
+}
+
+/* Mobile: ensure messages are not hidden behind input */
+@media (max-width: 768px) {
+    .chat-messages {
+        padding-bottom: 100px !important; /* Extra space for input on mobile */
+    }
+    
+    .scroll-buttons {
+        position: fixed;
+        top: auto;
+        bottom: 90px;
+        right: 16px;
+        flex-direction: column;
+    }
+    
+    .scroll-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 1.2rem;
+    }
+}
+
