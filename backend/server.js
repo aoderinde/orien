@@ -1988,47 +1988,61 @@ app.post('/api/chat', async (req, res) => {
                               model.includes('haiku-4.5') || model.includes('haiku-4-5');
     const minCacheTokens = isOpus45OrHaiku45 ? 4096 : 1024;
 
-    // 7. Rolling cache window strategy
-    // - Cache breakpoint stays stable for CACHE_TTL_MINUTES
-    // - After TTL expires, recalculate breakpoint based on current message count
-    // - This ensures cache hits within the TTL window
+    // 7. STABLE CACHING using message ID as anchor
+    // Strategy: 
+    // - Cache breakpoint is tied to a specific message ID
+    // - Message IDs are persistent and don't shift when new messages are added
+    // - Within TTL window, we find that same message and cache up to it
+    
     let cachedMessages = [...messages];
     let cacheBreakpointSet = false;
     
-    const minUncachedMessages = 3; // Keep last 3 messages uncached (current exchange + buffer)
     const cacheKey = conversationId || 'default';
     const now = Date.now();
-    
-    // Get or create cache state for this conversation
-    let convCacheState = cacheState.get(cacheKey);
     const ttlMs = CACHE_TTL_MINUTES * 60 * 1000;
+    const minUncachedMessages = 3;
     
-    // Check if we need to refresh the breakpoint
-    const needsRefresh = !convCacheState || 
-                         (now - convCacheState.timestamp) > ttlMs ||
-                         cachedMessages.length < convCacheState.breakpointIndex;
+    // Get existing cache state
+    let convCacheState = cacheState.get(cacheKey);
     
-    if (cachedMessages.length > minUncachedMessages) {
-      let breakpointIndex;
+    // Check if messages have IDs (new system)
+    const hasIds = cachedMessages.some(m => m.id);
+    
+    if (cachedMessages.length > minUncachedMessages && hasIds) {
+      let breakpointIndex = -1;
+      let cacheHitExpected = false;
       
-      if (needsRefresh) {
-        // Set new breakpoint: cache all except last 3 messages
-        breakpointIndex = cachedMessages.length - minUncachedMessages - 1;
+      // Check if we have a valid cached breakpoint ID
+      if (convCacheState && (now - convCacheState.timestamp) < ttlMs && convCacheState.messageId) {
+        // Find the message with the cached ID
+        const cachedMessageId = convCacheState.messageId;
+        breakpointIndex = cachedMessages.findIndex(m => m.id === cachedMessageId);
         
-        // Save new cache state
-        convCacheState = {
-          breakpointIndex,
-          timestamp: now,
-          messageCount: cachedMessages.length
-        };
-        cacheState.set(cacheKey, convCacheState);
-        console.log(`🔄 Cache refresh: new breakpoint at message ${breakpointIndex + 1} (TTL: ${CACHE_TTL_MINUTES}min)`);
-      } else {
-        // Use existing stable breakpoint
-        breakpointIndex = convCacheState.breakpointIndex;
-        const remainingMs = ttlMs - (now - convCacheState.timestamp);
-        const remainingSec = Math.ceil(remainingMs / 1000);
-        console.log(`♻️  Cache reuse: breakpoint at message ${breakpointIndex + 1} (${remainingSec}s remaining)`);
+        if (breakpointIndex >= 0) {
+          cacheHitExpected = true;
+          const remainingSec = Math.ceil((ttlMs - (now - convCacheState.timestamp)) / 1000);
+          console.log(`♻️  Cache reuse: anchored to message ID ${cachedMessageId} (${remainingSec}s remaining)`);
+        } else {
+          console.log(`⚠️  Cached message ID ${convCacheState.messageId} not in current window, refreshing`);
+        }
+      }
+      
+      // If no valid cache or message not found, set new breakpoint
+      if (breakpointIndex < 0) {
+        breakpointIndex = cachedMessages.length - minUncachedMessages - 1;
+        const anchorMessage = cachedMessages[breakpointIndex];
+        const anchorId = anchorMessage?.id;
+        
+        if (anchorId) {
+          convCacheState = {
+            messageId: anchorId,
+            timestamp: now
+          };
+          cacheState.set(cacheKey, convCacheState);
+          console.log(`🔄 Cache refresh: new anchor at message ID ${anchorId} (TTL: ${CACHE_TTL_MINUTES}min)`);
+        } else {
+          console.log(`⚠️  Message at breakpoint has no ID, skipping cache`);
+        }
       }
       
       // Calculate tokens up to breakpoint
@@ -2038,7 +2052,7 @@ app.post('/api/chat', async (req, res) => {
         totalCachedTokens += (typeof msgContent === 'string' ? msgContent.length : 0) / 4;
       }
       
-      // Only set cache breakpoint if we meet the minimum
+      // Set cache breakpoint if we meet minimum
       if (totalCachedTokens >= minCacheTokens && breakpointIndex >= 0) {
         const msgToCache = cachedMessages[breakpointIndex];
         
@@ -2054,11 +2068,14 @@ app.post('/api/chat', async (req, res) => {
             ]
           };
           cacheBreakpointSet = true;
-          console.log(`💾 Cache breakpoint at message ${breakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(totalCachedTokens)} tokens cached)`);
+          const hitOrMiss = cacheHitExpected ? '(expecting HIT)' : '(expecting WRITE)';
+          console.log(`💾 Cache at msg ID ${msgToCache.id}, position ${breakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(totalCachedTokens)} tokens) ${hitOrMiss}`);
         }
       } else {
         console.log(`💬 Total cacheable content ~${Math.ceil(totalCachedTokens)} tokens (need ${minCacheTokens}+ for ${model})`);
       }
+    } else if (cachedMessages.length > minUncachedMessages) {
+      console.log(`💬 Messages have no IDs yet, caching disabled until autosave`);
     } else {
       console.log(`💬 Conversation too short for caching (${cachedMessages.length} messages)`);
     }
@@ -2528,12 +2545,40 @@ app.post('/api/conversations/autosave', async (req, res) => {
     const { ObjectId } = await import('mongodb');
     const convs = collections.conversations();
 
+    // Function to assign IDs to messages that don't have them
+    const assignMessageIds = (messages, startId) => {
+      let nextId = startId;
+      return messages.map(msg => {
+        if (msg.id) {
+          // Keep existing ID, but track highest
+          nextId = Math.max(nextId, msg.id + 1);
+          return msg;
+        } else {
+          // Assign new ID
+          return { ...msg, id: nextId++ };
+        }
+      });
+    };
+
     if (conversationId && conversationId !== 'new') {
+      // Update existing conversation
+      // First, get current nextMessageId
+      const existing = await convs.findOne({ _id: new ObjectId(conversationId) });
+      const startId = existing?.nextMessageId || 1;
+      
+      // Assign IDs to new messages
+      const messagesWithIds = assignMessageIds(messages, startId);
+      
+      // Calculate new nextMessageId
+      const maxId = messagesWithIds.reduce((max, msg) => Math.max(max, msg.id || 0), 0);
+      const nextMessageId = maxId + 1;
+
       const result = await convs.updateOne(
           { _id: new ObjectId(conversationId) },
           {
             $set: {
-              messages: messages,
+              messages: messagesWithIds,
+              nextMessageId: nextMessageId,
               updatedAt: new Date()
             }
           }
@@ -2542,16 +2587,22 @@ app.post('/api/conversations/autosave', async (req, res) => {
       res.json({
         success: true,
         conversationId: conversationId,
-        updated: result.modifiedCount
+        updated: result.modifiedCount,
+        messages: messagesWithIds  // Return messages with IDs
       });
     } else {
+      // Create new conversation
+      const messagesWithIds = assignMessageIds(messages, 1);
+      const maxId = messagesWithIds.reduce((max, msg) => Math.max(max, msg.id || 0), 0);
+      
       const doc = {
         title: title || 'New Conversation',
         mode: mode || 'chat',
-        personaId: personaId || null, // NEW
+        personaId: personaId || null,
         model1: model || 'anthropic/claude-sonnet-4.5',
         model2: null,
-        messages: messages,
+        messages: messagesWithIds,
+        nextMessageId: maxId + 1,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -2561,7 +2612,8 @@ app.post('/api/conversations/autosave', async (req, res) => {
       res.json({
         success: true,
         conversationId: result.insertedId.toString(),
-        created: true
+        created: true,
+        messages: messagesWithIds  // Return messages with IDs
       });
     }
   } catch (error) {

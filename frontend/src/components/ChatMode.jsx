@@ -9,6 +9,9 @@ import MemoryView from './MemoryView';
 import { API_URL } from '../config';
 import ReactMarkdown from 'react-markdown';
 
+// Generate unique message ID
+const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
 function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPersonaId, onPersonaSet  }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -198,6 +201,11 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         personaId: selectedPersonaId
       });
 
+      // Update messages with IDs from backend
+      if (response.data.messages) {
+        setMessages(response.data.messages);
+      }
+
       if (response.data.created && response.data.conversationId) {
         setCurrentConversationId(response.data.conversationId);
         refreshConversationList();
@@ -239,6 +247,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
     if (!input.trim() || isLoading) return;
 
     const userMessage = {
+      id: generateMessageId(),
       role: 'user',
       content: input,
       timestamp: new Date().toISOString()
@@ -250,6 +259,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
 
     try {
       const apiMessages = [...messages, userMessage].map(msg => ({
+        id: msg.id,
         role: msg.role,
         content: msg.content
       }));
@@ -277,6 +287,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const args = JSON.parse(toolCall.function.arguments);
               const fact = args.fact;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `💾 Memory gespeichert: "${fact.substring(0, 100)}${fact.length > 100 ? '...' : ''}"`,
                 timestamp: new Date().toISOString(),
@@ -293,6 +304,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const args = JSON.parse(toolCall.function.arguments);
               const fact = args.fact;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `💾 Fact gespeichert: "${fact.substring(0, 80)}${fact.length > 80 ? '...' : ''}"`,
                 timestamp: new Date().toISOString(),
@@ -309,6 +321,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const args = JSON.parse(toolCall.function.arguments);
               const summary = args.summary;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `📝 Summary aktualisiert: "${summary.substring(0, 60)}${summary.length > 60 ? '...' : ''}"`,
                 timestamp: new Date().toISOString(),
@@ -325,6 +338,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const args = JSON.parse(toolCall.function.arguments);
               const message = args.message;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `💌 Notification gesendet`,
                 timestamp: new Date().toISOString(),
@@ -341,6 +355,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const args = JSON.parse(toolCall.function.arguments);
               const titles = args.titles;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `📚 Knowledge geladen: ${titles.join(', ')}`,
                 timestamp: new Date().toISOString(),
@@ -358,6 +373,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               const query = args.query;
               const resultCount = response.data.searchResults?.[0]?.results?.length || 0;
               newMessages.push({
+                id: generateMessageId(),
                 role: 'system',
                 content: `🔍 Suche: "${query}" → ${resultCount} Treffer`,
                 timestamp: new Date().toISOString(),
@@ -373,6 +389,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
       // Add the assistant message (only if there's content)
       if (response.data.message) {
         newMessages.push({
+          id: generateMessageId(),
           role: 'assistant',
           content: response.data.message,
           timestamp: new Date().toISOString(),
@@ -384,6 +401,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
     } catch (error) {
       console.error('Error:', error);
       const errorMessage = {
+        id: generateMessageId(),
         role: 'assistant',
         content: `Error: ${error.response?.data?.error || error.message}`,
         timestamp: new Date().toISOString(),
