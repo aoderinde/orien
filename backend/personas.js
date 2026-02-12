@@ -38,6 +38,49 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ========================================
+// CREATE PERSONA
+// ========================================
+router.post('/', async (req, res) => {
+  try {
+    const personas = collections.personas();
+    const { name, model, avatar, systemPrompt, knowledgeIds } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({error: 'Name is required'});
+    }
+
+    const newPersona = {
+      name: name.trim(),
+      model: model || 'anthropic/claude-sonnet-4',
+      avatar: avatar || '🤖',
+      systemPrompt: systemPrompt || '',
+      knowledgeIds: knowledgeIds || [],
+      memory: {
+        facts: [],
+        summaries: [],
+        manualFacts: [],
+        autoFacts: []
+      },
+      autonomous: false,
+      checkInterval: 90,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const result = await personas.insertOne(newPersona);
+    
+    res.status(201).json({
+      success: true,
+      _id: result.insertedId,
+      ...newPersona
+    });
+  } catch (error) {
+    console.error('Error creating persona:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
 
 // ========================================
 // UPDATE PERSONA
