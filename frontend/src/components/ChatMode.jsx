@@ -117,11 +117,16 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
     }
   };
 
+  // Track message count for smart scrolling
+  const prevMessageCountRef = useRef(0);
+  
   useEffect(() => {
-    if (messages.length > 0) {
+    // Only scroll if a NEW message was added (not just ID updates)
+    if (messages.length > prevMessageCountRef.current && messages.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages]);
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]); // Only depend on length, not content
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -139,7 +144,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         clearTimeout(autoSaveTimeout.current);
       }
     };
-  }, [messages]);
+  }, [messages.length]); // Only trigger on new messages, not ID updates
 
   const startEditTitle = () => {
     setEditTitleValue(conversationTitle);
@@ -270,7 +275,8 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
         model: modelToUse,
         messages: apiMessages,
         knowledgeBaseIds: activeKnowledgeIds,
-        personaId: selectedPersonaId
+        personaId: selectedPersonaId,
+        conversationId: currentConversationId !== 'new' ? currentConversationId : null
       });
 
       // Collect all messages to add (assistant + tool notifications)
