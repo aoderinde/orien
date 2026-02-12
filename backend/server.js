@@ -1728,7 +1728,8 @@ app.post('/api/chat', async (req, res) => {
           
           if (cacheValid && convCacheState.maxFactId !== undefined) {
             // Only load facts up to the cached ID
-            facts = allFacts.filter(f => f.id && f.id <= convCacheState.maxFactId);
+            // Include facts WITHOUT IDs (legacy) + facts with ID <= maxFactId
+            facts = allFacts.filter(f => !f.id || f.id <= convCacheState.maxFactId);
             const newFactsCount = allFacts.length - facts.length;
             if (newFactsCount > 0) {
               console.log(`📦 Memory cache: using ${facts.length} facts (${newFactsCount} new ones excluded)`);
@@ -1746,7 +1747,8 @@ app.post('/api/chat', async (req, res) => {
           
           if (cacheValid && convCacheState.maxSummaryId !== undefined) {
             // Only load summaries up to the cached ID
-            summaries = allSummaries.filter(s => s.id && s.id <= convCacheState.maxSummaryId);
+            // Include summaries WITHOUT IDs (legacy) + summaries with ID <= maxSummaryId
+            summaries = allSummaries.filter(s => !s.id || s.id <= convCacheState.maxSummaryId);
             const newSummariesCount = allSummaries.length - summaries.length;
             if (newSummariesCount > 0) {
               console.log(`📦 Memory cache: using ${summaries.length} summaries (${newSummariesCount} new ones excluded)`);
