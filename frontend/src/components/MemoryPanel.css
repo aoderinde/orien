@@ -220,9 +220,6 @@
 
 /* Mobile adjustments */
 @media (max-width: 768px) {
-    .facts-list {
-        max-height: 200px;
-    }
 
     .add-fact {
         flex-direction: column;
