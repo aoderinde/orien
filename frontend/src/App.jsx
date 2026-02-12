@@ -11,6 +11,7 @@ import PersonaList from './components/PersonaList';
 import PersonaEditor from './components/PersonaEditor';
 import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
+import MemoryView from './components/MemoryView';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
@@ -31,6 +32,10 @@ function App() {
   const [personas, setPersonas] = useState([]);
   const [selectedPersonaForChat, setSelectedPersonaForChat] = useState(null);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  
+  // Memory View state
+  const [showMemoryView, setShowMemoryView] = useState(false);
+  const [memoryViewPersona, setMemoryViewPersona] = useState(null);
 
   // NEW: Export handler reference
   const exportChatHandler = useRef(null);
@@ -86,6 +91,11 @@ function App() {
   const handleSelectPersona = (persona) => {
     setSelectedPersonaForChat(persona._id);
     setMode('chat');
+  };
+
+  const handleMemory = (persona) => {
+    setMemoryViewPersona(persona);
+    setShowMemoryView(true);
   };
 
   const handleSavePersona = async () => {
@@ -356,6 +366,7 @@ function App() {
                   onSelectPersona={handleSelectPersona}
                   onEditPersona={handleEditPersona}
                   onNewPersona={handleNewPersona}
+                  onMemory={handleMemory}
               />
           )}
 
@@ -376,6 +387,18 @@ function App() {
                 persona={editingPersona}
                 onSave={handleSavePersona}
                 onCancel={handleCancelPersona}
+            />
+        )}
+        
+        {showMemoryView && memoryViewPersona && (
+            <MemoryView
+                personaId={memoryViewPersona._id}
+                personaName={memoryViewPersona.name}
+                personaAvatar={memoryViewPersona.avatar}
+                onClose={() => {
+                  setShowMemoryView(false);
+                  setMemoryViewPersona(null);
+                }}
             />
         )}
       </div>

@@ -469,7 +469,7 @@ button:disabled {
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #3b5bdb 0%, #2f4bb8 100%);
+    background: #edf2f7;
 }
 
 .editable-title {
@@ -601,7 +601,7 @@ button:disabled {
     .chat-header {
         align-items: start;
         flex-shrink: 0;
-        padding: 12px 55px 12px 55px;
+        padding: 12px 60px 12px 60px;
         margin-bottom: 0;
         border-bottom: 1px solid #e2e8f0;
         background: white;
@@ -800,23 +800,20 @@ button:disabled {
 }
 
 
-/* Memory Button */
-.memory-btn {
-    width: 100%;
-    padding: 9px 16px;
-    white-space: nowrap;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+/* Memory Button - Subtle */
+.memory-btn-subtle {
+    padding: 7px 10px;
+    margin-left: 8px;
+    background: transparent;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
+    font-size: 1rem;
     transition: all 0.2s;
 }
 
-.memory-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+.memory-btn-subtle:hover {
+    background: #f0fdf4;
+    border-color: #10b981;
 }
 

@@ -477,10 +477,11 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
               
               {currentPersona && (
                 <button 
-                  className="memory-btn"
+                  className="memory-btn-subtle"
                   onClick={() => setShowMemoryView(true)}
+                  title="View Memory"
                 >
-                  🧠 Memory
+                  🧠
                 </button>
               )}
 

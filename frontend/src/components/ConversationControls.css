@@ -131,7 +131,7 @@ button:disabled {
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #3b5bdb 0%, #2f4bb8 100%);
+    background: #edf2f7;
 }
 
 /* Message Controls */

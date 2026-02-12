@@ -3,7 +3,7 @@ import axios from 'axios';
 import './PersonaList.css';
 import { API_URL } from '../config';
 
-function PersonaList({ onSelectPersona, onEditPersona, onNewPersona }) {
+function PersonaList({ onSelectPersona, onEditPersona, onNewPersona, onMemory }) {
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -94,6 +94,13 @@ function PersonaList({ onSelectPersona, onEditPersona, onNewPersona }) {
                           className="btn-edit"
                       >
                         ✏️ Edit
+                      </button>
+                      <button
+                          onClick={() => onMemory(persona)}
+                          className="btn-memory"
+                          title="View Memory"
+                      >
+                        🧠 Memory
                       </button>
                       <button
                           onClick={() => deletePersona(persona._id)}
