@@ -1919,66 +1919,20 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    // 4. Separate STABLE content (for caching) from DYNAMIC content (memories)
-    // Caching only works if content is identical between requests!
+    // 4. Combine all system content (no separate caching for system)
+    // We'll use ONE cache breakpoint strategy: cache everything up to a point
+    const allSystemContent = systemMessages.map(msg => msg.content).join('\n\n---\n\n');
     
-    // STABLE: System Prompt + Attached Knowledge (changes rarely)
-    const stableContent = [];
-    // DYNAMIC: Memories + Available Files (changes often)
-    const dynamicContent = [];
-    
-    for (const msg of systemMessages) {
-      if (msg.content.startsWith('Memory:') || msg.content.startsWith('Available Knowledge Files:')) {
-        dynamicContent.push(msg.content);
-      } else {
-        stableContent.push(msg.content);
-      }
-    }
-    
-    const stableText = stableContent.join('\n\n---\n\n');
-    const dynamicText = dynamicContent.join('\n\n');
-    
-    // Build messages with cache_control on STABLE content only
     const finalSystemMessages = [];
-    
-    // Determine minimum tokens for caching based on model
-    // Opus 4.5 and Haiku 4.5: 4096 tokens
-    // Sonnet 4.5, Opus 4, Sonnet 4: 1024 tokens
-    const isOpus45OrHaiku45 = model.includes('opus-4.5') || model.includes('opus-4-5') || model.includes('opus-4.6') || model.includes('opus-4-6') ||
-        model.includes('haiku-4.5') || model.includes('haiku-4-5');
-    const minCacheTokens = isOpus45OrHaiku45 ? 4096 : 1024;
-    
-    // First: Stable content WITH caching (if meets minimum)
-    const stableTokens = Math.ceil(stableText.length / 4);
-    if (stableText && stableTokens >= minCacheTokens) {
+    if (allSystemContent) {
       finalSystemMessages.push({
         role: 'system',
-        content: [
-          {
-            type: 'text',
-            text: stableText,
-            cache_control: { type: "ephemeral", ttl: "1h" }
-          }
-        ]
+        content: allSystemContent
       });
-      console.log(`📦 Cached content: ~${stableTokens} tokens (stable: system prompt + knowledge)`);
-    } else if (stableText) {
-      // Not enough tokens for caching, send as regular message
-      finalSystemMessages.push({
-        role: 'system',
-        content: stableText
-      });
-      console.log(`📦 Stable content: ~${stableTokens} tokens (too small for caching, need ${minCacheTokens}+ for ${model})`);
     }
     
-    // Second: Dynamic content WITHOUT caching
-    if (dynamicText) {
-      finalSystemMessages.push({
-        role: 'system',
-        content: dynamicText
-      });
-      console.log(`📝 Dynamic content: ~${Math.ceil(dynamicText.length / 4)} tokens (memories + file list, not cached)`);
-    }
+    const systemTokens = Math.ceil(allSystemContent.length / 4);
+    console.log(`📦 System content: ~${systemTokens} tokens`);
 
     // 5. Detect tool format based on model
     const toolFormat = getToolFormat(model);
@@ -1993,26 +1947,37 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    // 6. Add cache breakpoint on conversation history
-    // Cache all messages EXCEPT the last 2 (current exchange)
-    // This way, the "old" conversation is cached and reused
+    // 6. Determine minimum tokens for caching based on model
+    // Opus 4.5 and Haiku 4.5: 4096 tokens
+    // Sonnet 4.5, Opus 4, Sonnet 4: 1024 tokens
+    const isOpus45OrHaiku45 = model.includes('opus-4.5') || model.includes('opus-4-5') || 
+                              model.includes('haiku-4.5') || model.includes('haiku-4-5');
+    const minCacheTokens = isOpus45OrHaiku45 ? 4096 : 1024;
+
+    // 7. Smart cache breakpoint strategy
+    // We want to cache as much as possible - everything EXCEPT the last 2 messages (current exchange)
+    // But only if total cached content meets the minimum requirement
     let cachedMessages = [...messages];
+    let cacheBreakpointSet = false;
     
-    if (cachedMessages.length > 2) {
-      // Find the message to put cache breakpoint on (last message before current exchange)
-      const cacheBreakpointIndex = cachedMessages.length - 3; // -1 for last, -2 for second-to-last, -3 for the one before
+    const minUncachedMessages = 2; // Keep last 2 messages uncached (current exchange)
+    
+    if (cachedMessages.length > minUncachedMessages) {
+      // Calculate total tokens up to the breakpoint (all messages except last 2)
+      const breakpointIndex = cachedMessages.length - minUncachedMessages - 1;
       
-      // Calculate tokens up to breakpoint
-      const cachedTokens = cachedMessages.slice(0, cacheBreakpointIndex + 1)
-        .reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : m.content?.[0]?.text?.length || 0), 0) / 4;
+      let totalCachedTokens = systemTokens;
+      for (let i = 0; i <= breakpointIndex; i++) {
+        const msgContent = cachedMessages[i].content;
+        totalCachedTokens += (typeof msgContent === 'string' ? msgContent.length : 0) / 4;
+      }
       
-      // Only add cache_control if we meet minimum token requirement
-      if (cacheBreakpointIndex >= 0 && cachedMessages[cacheBreakpointIndex] && cachedTokens >= minCacheTokens) {
-        const msgToCache = cachedMessages[cacheBreakpointIndex];
+      // Only set cache breakpoint if we meet the minimum
+      if (totalCachedTokens >= minCacheTokens && breakpointIndex >= 0) {
+        const msgToCache = cachedMessages[breakpointIndex];
         
-        // Convert content to array format with cache_control
         if (typeof msgToCache.content === 'string') {
-          cachedMessages[cacheBreakpointIndex] = {
+          cachedMessages[breakpointIndex] = {
             ...msgToCache,
             content: [
               {
@@ -2022,14 +1987,14 @@ app.post('/api/chat', async (req, res) => {
               }
             ]
           };
+          cacheBreakpointSet = true;
+          console.log(`💾 Cache breakpoint at message ${breakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(totalCachedTokens)} tokens cached, ~${Math.ceil(systemTokens + cachedMessages.length * 100)} total)`);
         }
-        
-        console.log(`💬 Conversation cache breakpoint at message ${cacheBreakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(cachedTokens)} tokens cached)`);
-      } else if (cachedTokens < minCacheTokens) {
-        console.log(`💬 Conversation too small for caching (~${Math.ceil(cachedTokens)} tokens, need ${minCacheTokens}+ for ${model})`);
+      } else {
+        console.log(`💬 Total cacheable content ~${Math.ceil(totalCachedTokens)} tokens (need ${minCacheTokens}+ for ${model})`);
       }
     } else {
-      console.log(`💬 Conversation too short for caching (${cachedMessages.length} messages, need 3+)`);
+      console.log(`💬 Conversation too short for caching (${cachedMessages.length} messages)`);
     }
 
     // Combine system messages with (potentially cached) user messages
