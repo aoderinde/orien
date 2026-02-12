@@ -16,6 +16,13 @@ dotenv.config();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Cache configuration
+const CACHE_TTL_MINUTES = 5;
+const CACHE_WINDOW_MESSAGES = 30;
+
+// Cache state per conversation (in-memory, resets on server restart)
+const cacheState = new Map(); // conversationId -> { breakpointIndex, timestamp, messageCount }
+
 const allowedOrigins = [
   'http://localhost:5173',
   'https://orien-tau.vercel.app',
@@ -760,21 +767,38 @@ async function handlePersonaToolCalls(toolCalls, persona) {
 
   for (const toolCall of toolCalls) {
     const toolName = toolCall.function.name;
+    const rawArgs = toolCall.function.arguments;
     
     let args;
     try {
-      args = JSON.parse(toolCall.function.arguments);
+      args = JSON.parse(rawArgs);
     } catch (parseError) {
       console.error(`   ❌ Error parsing tool arguments for ${toolName}:`, parseError.message);
-      console.error(`   📄 Raw arguments: "${toolCall.function.arguments.substring(0, 200)}..."`);
+      console.error(`   📄 Raw arguments: "${rawArgs?.substring(0, 200)}"`);
+      
+      // Check if it's a placeholder like "..." or empty
+      if (!rawArgs || rawArgs.trim() === '...' || rawArgs.trim() === '{"..."}' || rawArgs.trim().length < 5) {
+        console.log(`   ⚠️ Model returned placeholder instead of real arguments, skipping`);
+        continue;
+      }
+      
       // Try to salvage what we can - extract message if it's a notification
       if (toolName === 'send_notification') {
-        const msgMatch = toolCall.function.arguments.match(/"message"\s*:\s*"([^"]+)/);
+        const msgMatch = rawArgs.match(/"message"\s*:\s*"([^"]+)/);
         if (msgMatch) {
           args = { message: msgMatch[1], urgency: 'low' };
           console.log(`   🔧 Salvaged notification message from malformed JSON`);
         } else {
-          continue; // Skip this tool call
+          console.log(`   ⚠️ Could not salvage notification, skipping`);
+          continue;
+        }
+      } else if (toolName === 'save_memory') {
+        const factMatch = rawArgs.match(/"fact"\s*:\s*"([^"]+)/);
+        if (factMatch) {
+          args = { fact: factMatch[1] };
+          console.log(`   🔧 Salvaged fact from malformed JSON`);
+        } else {
+          continue;
         }
       } else {
         continue; // Skip this tool call
@@ -807,18 +831,18 @@ async function handlePersonaToolCalls(toolCalls, persona) {
       }
     }
 
-    // SAVE MEMORY
+    // SAVE MEMORY (now saves to facts, not autoFacts)
     else if (toolName === "save_memory") {
       try {
         const { fact } = args;
         const factTrimmed = fact.trim();
-        console.log(`   💾 Attempting to save memory: "${factTrimmed.substring(0, 80)}..."`);
+        console.log(`   💾 Attempting to save fact: "${factTrimmed.substring(0, 80)}..."`);
 
         const personas = collections.personas();
         
         // Get current persona to check for duplicates
         const currentPersona = await personas.findOne({ _id: persona._id });
-        const existingFacts = currentPersona?.memory?.autoFacts || [];
+        const existingFacts = currentPersona?.memory?.facts || [];
         
         // Check for similar facts (simple similarity: same first 50 chars or >80% overlap)
         const isDuplicate = existingFacts.some(existing => {
@@ -841,26 +865,27 @@ async function handlePersonaToolCalls(toolCalls, persona) {
         });
 
         if (isDuplicate) {
-          console.log(`   ⏭️ Memory already exists, not saving duplicate`);
+          console.log(`   ⏭️ Fact already exists, not saving duplicate`);
         } else {
-          const autoFact = {
+          const factEntry = {
             fact: factTrimmed,
             timestamp: new Date(),
-            conversationId: null
+            conversationId: null,
+            source: 'agent'
           };
 
           await personas.updateOne(
               { _id: persona._id },
               {
-                $push: { 'memory.autoFacts': autoFact },
+                $push: { 'memory.facts': factEntry },
                 $set: { updatedAt: new Date() }
               }
           );
 
-          console.log(`   ✅ Memory saved (new fact)`);
+          console.log(`   ✅ Fact saved`);
         }
       } catch (error) {
-        console.error(`   ❌ Error saving memory:`, error);
+        console.error(`   ❌ Error saving fact:`, error);
       }
     }
 
@@ -1681,10 +1706,8 @@ app.post('/api/chat', async (req, res) => {
           hour: '2-digit',
           minute: '2-digit'
         });
-        systemMessages.push({
-          role: 'system',
-          content: `Current Time: ${timeString}`
-        });
+        // NOTE: Time is now added to the last user message (after cache setup)
+        // to preserve cache hits. See "Add current time to the last user message" below.
 
         // Load MEMORY (new structure: facts + currentSummary, legacy: manualFacts + autoFacts)
         if (persona.memory) {
@@ -1965,18 +1988,50 @@ app.post('/api/chat', async (req, res) => {
                               model.includes('haiku-4.5') || model.includes('haiku-4-5');
     const minCacheTokens = isOpus45OrHaiku45 ? 4096 : 1024;
 
-    // 7. Smart cache breakpoint strategy
-    // We want to cache as much as possible - everything EXCEPT the last 2 messages (current exchange)
-    // But only if total cached content meets the minimum requirement
+    // 7. Rolling cache window strategy
+    // - Cache breakpoint stays stable for CACHE_TTL_MINUTES
+    // - After TTL expires, recalculate breakpoint based on current message count
+    // - This ensures cache hits within the TTL window
     let cachedMessages = [...messages];
     let cacheBreakpointSet = false;
     
-    const minUncachedMessages = 2; // Keep last 2 messages uncached (current exchange)
+    const minUncachedMessages = 3; // Keep last 3 messages uncached (current exchange + buffer)
+    const cacheKey = conversationId || 'default';
+    const now = Date.now();
+    
+    // Get or create cache state for this conversation
+    let convCacheState = cacheState.get(cacheKey);
+    const ttlMs = CACHE_TTL_MINUTES * 60 * 1000;
+    
+    // Check if we need to refresh the breakpoint
+    const needsRefresh = !convCacheState || 
+                         (now - convCacheState.timestamp) > ttlMs ||
+                         cachedMessages.length < convCacheState.breakpointIndex;
     
     if (cachedMessages.length > minUncachedMessages) {
-      // Calculate total tokens up to the breakpoint (all messages except last 2)
-      const breakpointIndex = cachedMessages.length - minUncachedMessages - 1;
+      let breakpointIndex;
       
+      if (needsRefresh) {
+        // Set new breakpoint: cache all except last 3 messages
+        breakpointIndex = cachedMessages.length - minUncachedMessages - 1;
+        
+        // Save new cache state
+        convCacheState = {
+          breakpointIndex,
+          timestamp: now,
+          messageCount: cachedMessages.length
+        };
+        cacheState.set(cacheKey, convCacheState);
+        console.log(`🔄 Cache refresh: new breakpoint at message ${breakpointIndex + 1} (TTL: ${CACHE_TTL_MINUTES}min)`);
+      } else {
+        // Use existing stable breakpoint
+        breakpointIndex = convCacheState.breakpointIndex;
+        const remainingMs = ttlMs - (now - convCacheState.timestamp);
+        const remainingSec = Math.ceil(remainingMs / 1000);
+        console.log(`♻️  Cache reuse: breakpoint at message ${breakpointIndex + 1} (${remainingSec}s remaining)`);
+      }
+      
+      // Calculate tokens up to breakpoint
       let totalCachedTokens = systemTokens;
       for (let i = 0; i <= breakpointIndex; i++) {
         const msgContent = cachedMessages[i].content;
@@ -1994,12 +2049,12 @@ app.post('/api/chat', async (req, res) => {
               {
                 type: 'text',
                 text: msgToCache.content,
-                cache_control: { type: "ephemeral", ttl: "1h" }
+                cache_control: { type: "ephemeral" }
               }
             ]
           };
           cacheBreakpointSet = true;
-          console.log(`💾 Cache breakpoint at message ${breakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(totalCachedTokens)} tokens cached, ~${Math.ceil(systemTokens + cachedMessages.length * 100)} total)`);
+          console.log(`💾 Cache breakpoint at message ${breakpointIndex + 1}/${cachedMessages.length} (~${Math.ceil(totalCachedTokens)} tokens cached)`);
         }
       } else {
         console.log(`💬 Total cacheable content ~${Math.ceil(totalCachedTokens)} tokens (need ${minCacheTokens}+ for ${model})`);
@@ -2010,6 +2065,33 @@ app.post('/api/chat', async (req, res) => {
 
     // Combine system messages with (potentially cached) user messages
     const finalMessages = [...finalSystemMessages, ...cachedMessages];
+    
+    // Add current time to the last user message (after caching to preserve cache hits)
+    if (persona) {
+      const now = new Date();
+      const timeString = now.toLocaleString('de-DE', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      // Find the last user message and append time context
+      for (let i = finalMessages.length - 1; i >= 0; i--) {
+        if (finalMessages[i].role === 'user') {
+          const originalContent = typeof finalMessages[i].content === 'string' 
+            ? finalMessages[i].content 
+            : finalMessages[i].content;
+          finalMessages[i] = {
+            ...finalMessages[i],
+            content: `[${timeString}]\n\n${originalContent}`
+          };
+          break;
+        }
+      }
+    }
 
     // 6. Build API request
     const requestBody = {
