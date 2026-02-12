@@ -2593,15 +2593,17 @@ app.post('/api/conversations/autosave', async (req, res) => {
     const convs = collections.conversations();
 
     // Function to assign IDs to messages that don't have them
+    // Only keep existing IDs if they are NUMBERS (from backend)
+    // String IDs (from frontend temp) should be replaced
     const assignMessageIds = (messages, startId) => {
       let nextId = startId;
       return messages.map(msg => {
-        if (msg.id) {
-          // Keep existing ID, but track highest
+        if (typeof msg.id === 'number') {
+          // Keep existing numeric ID, but track highest
           nextId = Math.max(nextId, msg.id + 1);
           return msg;
         } else {
-          // Assign new ID
+          // Assign new numeric ID (replaces string IDs or missing IDs)
           return { ...msg, id: nextId++ };
         }
       });
