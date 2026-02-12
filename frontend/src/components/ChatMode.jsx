@@ -5,6 +5,7 @@ import { MODELS } from '../models';
 import ConversationList from './ConversationList';
 import PersonaSelector from './PersonaSelector';
 import ExportModal from './ExportModal';
+import MemoryView from './MemoryView';
 import { API_URL } from '../config';
 import ReactMarkdown from 'react-markdown';
 
@@ -19,6 +20,7 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
   const [conversationTitle, setConversationTitle] = useState('New Conversation');
   const [isSaving, setIsSaving] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [showMemoryView, setShowMemoryView] = useState(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const autoSaveTimeout = useRef(null);
@@ -472,6 +474,15 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
                   selectedPersonaId={selectedPersonaId}
                   onSelectPersona={setSelectedPersonaId}
               />
+              
+              {currentPersona && (
+                <button 
+                  className="memory-btn"
+                  onClick={() => setShowMemoryView(true)}
+                >
+                  🧠 Memory
+                </button>
+              )}
 
               <div className="model-selector">
                 <label>Model:</label>
@@ -568,6 +579,15 @@ function ChatMode({ activeKnowledgeIds, onOpenMenu, onRequestExport, initialPers
                 personaName={currentPersona?.name}
                 personaId={selectedPersonaId}  // ← ADD THIS
                 onClose={() => setShowExportModal(false)}
+            />
+        )}
+        
+        {showMemoryView && currentPersona && (
+            <MemoryView
+                personaId={selectedPersonaId}
+                personaName={currentPersona.name}
+                personaAvatar={currentPersona.avatar}
+                onClose={() => setShowMemoryView(false)}
             />
         )}
       </div>

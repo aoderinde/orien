@@ -20,7 +20,7 @@
     background: white;
     cursor: pointer;
     transition: border-color 0.2s;
-    min-width: 200px;
+    min-width: 170px;
 }
 
 .persona-selector select:focus {

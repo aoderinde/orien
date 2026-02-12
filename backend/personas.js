@@ -109,7 +109,7 @@ router.delete('/:id', async (req, res) => {
 // MEMORY ENDPOINTS
 // ========================================
 
-// GET PERSONA'S MEMORY
+// GET PERSONA'S MEMORY (all types)
 router.get('/:id/memory', async (req, res) => {
   try {
     const {ObjectId} = await import('mongodb');
@@ -121,14 +121,126 @@ router.get('/:id/memory', async (req, res) => {
       return res.status(404).json({error: 'Persona not found'});
     }
 
-    res.json(persona.memory || {manualFacts: [], autoFacts: []});
+    // Return all memory types
+    res.json({
+      facts: persona.memory?.facts || [],
+      summaries: persona.memory?.summaries || [],
+      manualFacts: persona.memory?.manualFacts || [],
+      autoFacts: persona.memory?.autoFacts || [],
+      currentSummary: persona.memory?.currentSummary || null
+    });
   } catch (error) {
     console.error('Error fetching memory:', error);
     res.status(500).json({error: error.message});
   }
 });
 
-// ADD MANUAL MEMORY FACT
+// ADD FACT
+router.post('/:id/memory/facts', async (req, res) => {
+  try {
+    const {ObjectId} = await import('mongodb');
+    const personas = collections.personas();
+    const {fact} = req.body;
+
+    if (!fact) {
+      return res.status(400).json({error: 'Fact is required'});
+    }
+
+    const factEntry = {
+      fact: fact.trim(),
+      timestamp: new Date(),
+      conversationId: null,
+      source: 'manual'
+    };
+
+    const result = await personas.updateOne(
+        {_id: new ObjectId(req.params.id)},
+        {
+          $push: {'memory.facts': factEntry},
+          $set: {updatedAt: new Date()}
+        }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({error: 'Persona not found'});
+    }
+
+    res.json({success: true, fact: factEntry});
+  } catch (error) {
+    console.error('Error adding fact:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
+// DELETE FACT
+router.delete('/:id/memory/facts/:index', async (req, res) => {
+  try {
+    const {ObjectId} = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+
+    const persona = await personas.findOne({_id: new ObjectId(req.params.id)});
+
+    if (!persona) {
+      return res.status(404).json({error: 'Persona not found'});
+    }
+
+    if (persona.memory?.facts && persona.memory.facts[index] !== undefined) {
+      persona.memory.facts.splice(index, 1);
+
+      await personas.updateOne(
+          {_id: new ObjectId(req.params.id)},
+          {
+            $set: {
+              'memory.facts': persona.memory.facts,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({success: true});
+  } catch (error) {
+    console.error('Error removing fact:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
+// DELETE SUMMARY
+router.delete('/:id/memory/summaries/:index', async (req, res) => {
+  try {
+    const {ObjectId} = await import('mongodb');
+    const personas = collections.personas();
+    const index = parseInt(req.params.index);
+
+    const persona = await personas.findOne({_id: new ObjectId(req.params.id)});
+
+    if (!persona) {
+      return res.status(404).json({error: 'Persona not found'});
+    }
+
+    if (persona.memory?.summaries && persona.memory.summaries[index] !== undefined) {
+      persona.memory.summaries.splice(index, 1);
+
+      await personas.updateOne(
+          {_id: new ObjectId(req.params.id)},
+          {
+            $set: {
+              'memory.summaries': persona.memory.summaries,
+              updatedAt: new Date()
+            }
+          }
+      );
+    }
+
+    res.json({success: true});
+  } catch (error) {
+    console.error('Error removing summary:', error);
+    res.status(500).json({error: error.message});
+  }
+});
+
+// ADD MANUAL MEMORY FACT (legacy)
 router.post('/:id/memory/manual', async (req, res) => {
   try {
     const {ObjectId} = await import('mongodb');

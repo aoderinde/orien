@@ -1,0 +1,275 @@
+.memory-view-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.memory-view {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.memory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.memory-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #1e293b;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.memory-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.memory-tabs .tab {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #64748b;
+  transition: all 0.2s;
+}
+
+.memory-tabs .tab:hover {
+  background: #e2e8f0;
+}
+
+.memory-tabs .tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.memory-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.memory-loading {
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+}
+
+.empty-state {
+  text-align: center;
+  color: #94a3b8;
+  padding: 40px;
+  font-style: italic;
+}
+
+/* Add Fact Input */
+.add-fact {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.add-fact input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.add-fact input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.add-fact button {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.add-fact button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Memory Items */
+.memory-item {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-left: 4px solid #667eea;
+}
+
+.memory-item.summary {
+  border-left-color: #10b981;
+}
+
+.memory-item.legacy {
+  border-left-color: #94a3b8;
+  opacity: 0.8;
+}
+
+.memory-text {
+  color: #1e293b;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.memory-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.memory-meta .timestamp {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.delete-btn:hover {
+  background: #fee2e2;
+}
+
+/* Conversation Groups */
+.conversation-group {
+  margin-bottom: 24px;
+}
+
+.conversation-header {
+  font-weight: 600;
+  color: #475569;
+  padding: 8px 12px;
+  background: #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.summaries-list {
+  padding-left: 12px;
+  border-left: 2px solid #e2e8f0;
+}
+
+/* Legacy Section */
+.legacy-note {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+}
+
+.legacy-group {
+  margin-bottom: 20px;
+}
+
+.legacy-group h4 {
+  color: #64748b;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .memory-view-overlay {
+    padding: 10px;
+  }
+  
+  .memory-view {
+    max-height: 90vh;
+  }
+  
+  .memory-header {
+    padding: 16px;
+  }
+  
+  .memory-header h2 {
+    font-size: 1.1rem;
+  }
+  
+  .memory-tabs {
+    padding: 8px 12px;
+    overflow-x: auto;
+  }
+  
+  .memory-tabs .tab {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  
+  .memory-content {
+    padding: 16px;
+  }
+  
+  .add-fact {
+    flex-direction: column;
+  }
+  
+  .add-fact button {
+    padding: 12px;
+  }
+}

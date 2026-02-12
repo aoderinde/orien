@@ -1690,15 +1690,26 @@ app.post('/api/chat', async (req, res) => {
         if (persona.memory) {
           const memoryParts = [];
           
-          // NEW: Load persistent facts
+          // Load persistent facts
           const facts = persona.memory.facts || [];
           if (facts.length > 0) {
             const factsList = facts.map(f => f.fact);
             memoryParts.push(`Facts:\n${factsList.join('\n')}`);
           }
           
-          // NEW: Load current summary (rolling, only one)
-          if (persona.memory.currentSummary) {
+          // Load summaries (new append-based system)
+          // Show last 5 summaries for context, with most recent first
+          const summaries = persona.memory.summaries || [];
+          if (summaries.length > 0) {
+            const recentSummaries = summaries
+              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .slice(0, 5)
+              .map(s => s.text);
+            memoryParts.push(`Recent Summaries:\n${recentSummaries.join('\n')}`);
+          }
+          
+          // LEGACY: Load current summary (old single-summary system)
+          if (persona.memory.currentSummary && !summaries.length) {
             memoryParts.push(`Current State:\n${persona.memory.currentSummary.summary}`);
           }
           
@@ -1723,7 +1734,7 @@ app.post('/api/chat', async (req, res) => {
               role: 'system',
               content: `Memory:\n${memoryParts.join('\n\n')}`
             });
-            console.log(`✅ Loaded memory: ${facts.length} facts, ${persona.memory.currentSummary ? '1 summary' : 'no summary'}, ${manualFacts.length} manual, ${Math.min(autoFacts.length, 5)} legacy`);
+            console.log(`✅ Loaded memory: ${facts.length} facts, ${summaries.length} summaries, ${manualFacts.length} manual, ${Math.min(autoFacts.length, 5)} legacy`);
           }
         }
 
@@ -2191,7 +2202,7 @@ app.post('/api/chat', async (req, res) => {
             }
           }
           
-          // SAVE SUMMARY - no result needed, but acknowledge
+          // SAVE SUMMARY - append to conversation's summary chain
           else if (toolCall.function.name === "save_summary") {
             // Check if summary already saved in this request
             if (summaryAlreadySaved) {
@@ -2207,24 +2218,26 @@ app.post('/api/chat', async (req, res) => {
                   hour: '2-digit', minute: '2-digit'
                 });
 
-                console.log(`📝 Saving summary: "${summary.substring(0, 80)}..."`);
+                console.log(`📝 Appending summary: "${summary.substring(0, 80)}..."`);
 
                 const personas = collections.personas();
+                
+                // Append to summaries array (grouped by conversationId)
+                const summaryEntry = {
+                  text: `[${timestamp}] ${summary.trim()}`,
+                  timestamp: now,
+                  conversationId: conversationId || 'unknown'
+                };
+                
                 await personas.updateOne(
                   { _id: new ObjectId(personaId) },
                   {
-                    $set: { 
-                      'memory.currentSummary': {
-                        summary: `[${timestamp}] ${summary.trim()}`,
-                        timestamp: now,
-                        conversationId
-                      },
-                      updatedAt: now 
-                    }
+                    $push: { 'memory.summaries': summaryEntry },
+                    $set: { updatedAt: now }
                   }
                 );
-                console.log(`✅ Summary saved`);
-                toolResult = "Summary saved (replaced previous)";
+                console.log(`✅ Summary appended`);
+                toolResult = "Summary appended to conversation history";
                 summaryAlreadySaved = true;  // Mark as done
               } catch (error) {
                 console.error('Error saving summary:', error);
